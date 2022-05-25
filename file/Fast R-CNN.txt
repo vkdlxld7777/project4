@@ -1,0 +1,2526 @@
+FastR-CNN
+RossGirshick
+MicrosoftResearch
+rbg@microsoft.com
+Abstract
+ThispaperproposesaFastRegion-basedConvolutional
+Networkmethod
+(FastR-CNN)
+forobjectdetection.Fast
+R-CNNbuildsonpreviousworktoefcientlyclassifyob-
+
+jectproposalsusingdeepconvolutionalnetworks.Com-
+
+paredtopreviouswork,FastR-CNNemploysseveralin-
+
+novationstoimprovetrainingandtestingspeedwhile also
+
+increasingdetectionaccuracy.FastR-CNNtrainsthevery
+
+deepVGG16network9
+
+fasterthanR-CNN, is213
+
+faster
+attest-time,andachievesahighermAPonPASCALVOC
+
+2012.ComparedtoSPPnet,FastR-CNNtrainsVGG163
+
+faster,tests10
+
+faster,andismoreaccurate.FastR-CNN
+isimplementedinPythonandC++(usingCaffe)andis
+
+availableundertheopen-sourceMITLicenseat
+https:
+//github.com/rbgirshick/fast-rcnn
+.
+1.Introduction
+Recently,deepConvNets[
+14
+,
+16
+] have signicantlyim-
+provedimageclassication[
+14
+]andobjectdetection[
+9
+,
+19
+]
+accuracy.Comparedtoimageclassication,objectdetec-
+
+tionisamorechallengingtaskthatrequiresmorecom-
+
+plexmethodstosolve.Duetothiscomplexity,currentap-
+
+proaches(
+e.g
+.,[
+9
+,
+11
+,
+19
+,
+25
+])trainmodelsinmulti-stage
+pipelinesthatareslowandinelegant.
+Complexityarisesbecausedetectionrequirestheac-
+curatelocalizationofobjects,creatingtwoprimarychal-
+
+lenges.First,numerouscandidateobjectlocations (often
+
+calledﬁproposalsﬂ)mustbeprocessed.Second,these can-
+
+didatesprovideonlyroughlocalizationthatmustbe rened
+
+toachievepreciselocalization.Solutionstotheseproblems
+
+oftencompromisespeed,accuracy,orsimplicity.
+Inthispaper,westreamlinethetrainingprocessforstate-
+of-the-artConvNet-basedobjectdetectors[
+9
+,
+11
+].Wepro-
+poseasingle-stagetraining algorithmthatjointlylearnsto
+
+classifyobjectproposalsandrenetheirspatiallocations.
+Theresultingmethodcantrainaverydeepdetection
+network(VGG16[
+20
+])9
+
+fasterthanR-CNN[
+9
+]and3
+
+fasterthanSPPnet[
+11
+].At runtime,thedetectionnetwork
+processesimages in0.3s(excludingobjectproposaltime)
+whileachievingtopaccuracyonPASCALVOC2012[
+7
+]
+withamAPof66%(vs.62%forR-CNN).
+1
+1.1.and SPPnet
+TheRegion-basedConvolutionalNetworkmethod(R-
+CNN)[
+9
+]achievesexcellentobjectdetectionaccuracyby
+usingadeepConvNettoclassifyobjectproposals.R-CNN,
+
+however,hasnotabledrawbacks:
+1.
+Trainingisamulti-stagepipeline.
+R-CNNrstne-
+tunesa ConvNetonobject proposalsusinglogloss.
+
+Then,ittsSVMstoConvNetfeatures.TheseSVMs
+
+actasobjectdetectors,replacing thesoftmaxclassi-
+
+erlearntbyne-tuning.Inthethird trainingstage,
+
+bounding-boxregressorsarelearned.
+2.
+Trainingisexpensiveinspaceandtime.
+ForSVM
+andbounding-boxregressortraining,featuresareex-
+
+tractedfromeachobjectproposalineachimageand
+
+writtentodisk.Withverydeepnetworks,suchas
+
+VGG16,thisprocesstakes2.5GPU-daysforthe5k
+
+imagesoftheVOC07 trainvalset.Thesefeaturesre-
+
+quirehundredsofgigabytesofstorage.
+3.
+Objectdetectionisslow.
+Attest-time,featuresare
+extractedfromeachobjectproposalineachtestimage.
+
+DetectionwithVGG16takes47s/image(onaGPU).
+R-CNN isslowbecauseitperformsaConvNet forward
+passforeachobjectproposal,withoutsharingcomputation.
+
+Spatialpyramidpooling networks(SPPnets)[
+11
+]werepro-
+posedtospeedupR-CNNbysharingcomputation.The
+
+SPPnetmethodcomputesaconvolutionalfeaturemapfor
+
+theentireinputimageandthenclassieseachobjectpro-
+
+posalusingafeaturevectorextractedfromthesharedfea-
+
+turemap.Featuresareextractedfora proposalbymax-
+
+poolingtheportionofthefeaturemapinside theproposal
+
+intoaxed-sizeoutput(
+e.g
+.,
+6
+
+6
+).Multipleoutputsizes
+arepooledandthenconcatenatedasinspatialpyramidpool-
+
+ing[
+15
+].SPPnetacceleratesR-CNNby10to100
+
+attest
+time.Trainingtimeisalsoreducedby3
+
+duetofasterpro-
+posalfeatureextraction.
+1
+AlltimingsuseoneNvidiaK40GPUoverclockedto875 MHz.
+1440
+
+SPPnetalsohasnotabledrawbacks.LikeR-CNN,train-
+ingisamulti-stagepipelinethatinvolvesextractingfea-
+
+tures,ne-tuninganetworkwithlogloss,trainingSVMs,
+
+andnallyttingbounding-boxregressors.Featuresare
+
+alsowrittentodisk.ButunlikeR-CNN, thene-tuningal-
+
+gorithmproposedin[
+11
+]cannotupdatetheconvolutional
+layersthatprecedethespatialpyramidpooling.Unsurpris-
+
+ingly,thislimitation(xedconvolutionallayers)limits the
+
+accuracyofvery deepnetworks.
+
+1.2.Contributions
+Weproposeanewtrainingalgorithmthatxesthedisad-
+vantagesofR-CNNandSPPnet,whileimprovingontheir
+
+speedandaccuracy.Wecall thismethod
+FastR-CNN
+be-
+causeit'scomparatively fasttotrainandtest.TheFastR-
+
+CNNmethodhasseveraladvantages:
+1.Higherdetectionquality(mAP)thanR-CNN,SPPnet
+
+2.Trainingissingle-stage,usingamulti-taskloss
+
+3.Trainingcanupdateallnetworklayers
+
+4.Nodiskstorageisrequiredforfeaturecaching
+FastR-CNNiswritteninPythonandC++(Caffe
+[
+13
+])andisavailableundertheopen-sourceMITLi-
+censeat
+https://github.com/rbgirshick/
+fast- rcnn
+.
+2.Fast R-CNNarchitectureandtraining
+Fig.
+1
+illustratestheFastR-CNNarchitecture.AFast
+R-CNNnetworktakesasinputanentireimageandaset
+
+ofobjectproposals.Thenetworkrstprocessesthewhole
+
+imagewithseveralconvolutional(
+conv
+)andmaxpooling
+layerstoproduceaconvfeaturemap.Then,foreachob-
+
+jectproposalaregionofinterest(
+RoI
+)poolinglayerex-
+tractsaxed-lengthfeaturevectorfromthefeaturemap.
+
+Eachfeaturevectorisfedinto asequenceoffullyconnected
+
+(fc
+) layersthatnallybranchintotwosiblingoutputlay-
+ers:onethatproducessoftmaxprobabilityestimatesover
+
+K
+object classesplusa catch-allﬁbackgroundﬂ classand
+anotherlayerthatoutputsfourreal-valuednumbers foreach
+
+ofthe
+K
+objectclasses.Eachsetof
+4
+valuesencodesrened
+bounding-boxpositionsforoneofthe
+K
+classes.
+2.1.The RoIpoolinglayer
+The RoIpoolinglayerusesmaxpoolingtoconvertthe
+featuresinsideanyvalidregionofinterestintoasmallfea-
+
+turemapwithaxedspatialextentof
+H
+
+W
+(
+e.g
+.,
+7
+
+7
+),
+where
+H
+and
+W
+arelayerhyper-parametersthatareinde-
+pendentofanyparticular RoI.Inthispaper,anRoIisa
+
+rectangularwindowintoaconvfeaturemap.EachRoIis
+
+denedbyafour-tuple
+(
+r;c;h;w
+)
+thatspeciesitstop-left
+corner
+(
+r;c
+)
+anditsheightandwidth
+(
+h;w
+)
+.
+Deep
+
+ConvNet
+Conv
+
+feature map
+RoI
+
+projection
+RoI
+
+pooling
+layer
+FCs
+RoIfeature
+vector
+softmax
+bbox
+regressor
+Outputs
+:
+FC
+FC
+For each RoI
+Figure1.FastR-CNNarchitecture.Aninputimageandmulti-
+
+pleregionsofinterest(RoIs)areinputintoafullyconvolutional
+
+network.EachRoIispooledintoaxed-sizefeaturemapand
+
+thenmappedtoafeaturevectorbyfullyconnectedlayers(FCs).
+
+ThenetworkhastwooutputvectorsperRoI:softmaxprobabilities
+
+andper-classbounding-boxregression offsets. Thearchitectureis
+
+trainedend-to-endwithamulti-taskloss.
+RoImaxpoolingworksbydividing the
+h
+
+w
+RoIwin-
+dowinto an
+H
+
+W
+gridofsub-windowsofapproximate
+size
+h=H
+
+w=W
+andthenmax-poolingthevaluesineach
+sub-windowintothecorrespondingoutputgridcell.Pool-
+
+ingisappliedindependentlytoeachfeaturemapchannel,
+
+asinstandard maxpooling.TheRoIlayerissimplythe
+
+special-caseofthespatialpyramidpoolinglayerusedin
+
+SPPnets[
+11
+]inwhichthereisonlyonepyramidlevel.We
+usethepoolingsub-windowcalculationgivenin[
+11
+].
+2.2.Initializingfromprnetworks
+Weexperimentwiththreepre-trainedImageNet[
+4
+]net-
+works,eachwithvemaxpoolinglayersandbetweenve
+
+andthirteenconvlayers(seeSection
+4.1
+fornetworkde-
+tails).Whenapre-trainednetworkinitializesaFastR-CNN
+
+network,itundergoesthreetransformations.
+First,thelastmaxpoolinglayerisreplacedbyaRoI
+poolinglayerthatisconguredbysetting
+H
+and
+W
+tobe
+compatiblewiththenet'srstfullyconnectedlayer(
+e.g
+.,
+H
+=
+W
+=7
+for VGG16).
+Second,thenetwork'slastfullyconnectedlayerandsoft-
+max(whichweretrainedfor1000-wayImageNetclassi-
+
+cation)arereplacedwiththetwosiblinglayersdescribed
+
+earlier(afullyconnectedlayerandsoftmaxover
+K
++1
+cat-
+egoriesandcategory-specicbounding-boxregressors).
+Third,thenetworkismodiedtotaketwodatainputs:a
+listofimagesandalistofRoIsinthoseimages.
+
+2.3.fordetection
+Trainingallnetwork weightswithback-propagationisan
+importantcapabilityofFastR-CNN.First,let'selucidate
+
+whySPPnetisunabletoupdateweightsbelowthespatial
+
+pyramidpoolinglayer.
+Therootcause isthatback-propagationthroughtheSPP
+layerishighlyinefcientwheneachtrainingsample(
+i.e
+.
+RoI)comesfromadifferentimage,whichisexactlyhow
+
+R-CNNandSPPnet networksaretrained.Theinefciency
+1441
+
+stemsfromthefactthateachRoI mayhavea verylarge
+
+receptiveeld,oftenspanningtheentireinputimage.Since
+
+theforwardpassmustprocesstheentirereceptiveeld,the
+
+traininginputsarelarge(oftentheentireimage).
+Weproposeamoreefcienttrainingmethodthattakes
+advantageoffeaturesharingduringtraining.InFast R-
+
+CNNtraining,stochastic gradientdescent(SGD)mini-
+
+batchesaresampledhierarchically,rstbysampling
+N
+im-
+agesandthen bysampling
+R=N
+RoIsfromeachimage.
+Critically,RoIsfromthesameimagesharecomputation
+
+andmemoryintheforwardandbackwardpasses.Making
+
+N
+smalldecreasesmini-batchcomputation.For example,
+whenusing
+N
+=2
+and
+R
+=128
+,theproposedtraining
+schemeisroughly 64
+
+fasterthansamplingoneRoIfrom
+128
+differentimages (
+i.e
+.,theR-CNNandSPPnetstrategy).
+One concernoverthisstrategyisitmaycauseslowtrain-
+ingconvergencebecauseRoIsfromthesameimagearecor-
+
+related.Thisconcerndoesnotappeartobeapracticalissue
+
+andweachievegoodresultswith
+N
+=2
+and
+R
+=128
+usingfewerSGDiterationsthanR-CNN.
+Inadditiontohierarchicalsampling,FastR-CNNusesa
+streamlinedtrainingprocesswithonene-tuningstagethat
+
+jointlyoptimizesasoftmaxclassierandbounding-box re-
+
+gressors,ratherthantrainingasoftmaxclassier,SVMs,
+
+andregressorsinthreeseparatestages[
+9
+,
+11
+].Thecompo-
+nents ofthisprocedure (theloss,mini-batchsamplingstrat-
+
+egy,back-propagationthroughRoIpoolinglayers,andSGD
+
+hyper-parameters)aredescribedbelow.
+
+Multi-taskloss.
+AFastR-CNNnetworkhastwosibling
+outputlayers.Therstoutputsadiscreteprobabilitydistri-
+
+bution(perRoI),
+p
+=(
+p
+0
+;:::;p
+K
+)
+,over
+K
++1
+categories.
+Asusual,
+p
+iscomputedbyasoftmaxoverthe
+K
++1
+outputs
+ofafullyconnectedlayer.Thesecondsiblinglayeroutputs
+
+bounding-boxregressionoffsets,
+t
+k
+=
+
+t
+k
+
+x;t
+k
+
+y;t
+k
+
+w;t
+k
+
+h
+,for
+eachofthe
+K
+objectclasses,indexedby
+k
+.We usethepa-
+rameterizationfor
+t
+k
+givenin[
+9
+],inwhich
+t
+k
+speciesa
+scale-invarianttranslationandlog-spaceheight/widthshift
+
+relativetoanobjectproposal.
+EachtrainingRoIislabeledwithaground-truthclass
+u
+andaground-truthbounding-boxregressiontarget
+v
+.We
+useamulti-task loss
+L
+on eachlabeledRoItojointlytrain
+forclassicationandbounding-boxregression:
+L
+(
+p;u;t
+u
+;v
+)=
+L
+cls
+(
+p;u
+)+
+
+[
+u
+
+1]
+L
+loc
+(
+t
+u
+;v
+)
+;
+(1)
+inwhich
+L
+cls
+(
+p;u
+)=
+
+log
+p
+u
+isloglossfor trueclass
+u
+.
+Thesecondtaskloss,
+L
+loc
+,isdenedoveratupleof
+truebounding-boxregressiontargetsforclass
+u
+,
+v
+=
+(
+v
+x
+;v
+y
+;v
+w
+;v
+h
+)
+, andapredictedtuple
+t
+u
+=(
+t
+u
+
+x;t
+u
+
+y;t
+u
+
+w;t
+u
+
+h)
+,
+againforclass
+u
+.TheIversonbracketindicatorfunction
+[
+u
+
+1]
+evaluatesto1when
+u
+
+1
+and0otherwise.By
+conventionthecatch-allbackgroundclassislabeled
+u
+=0
+.
+ForbackgroundRoIsthereisnonotionofaground-truth
+boundingboxandhence
+L
+loc
+isignored.Forbounding-box
+regression,we usetheloss
+L
+loc
+(
+t
+u
+;v
+)=
+X
+i
+2f
+x
+;
+y
+;
+w
+;
+h
+g
+smooth
+L
+1
+(
+t
+u
+
+i
+
+v
+i
+)
+;
+(2)
+inwhich
+smooth
+L
+1
+(
+x
+)=
+(
+0
+:
+5
+x
+2
+if
+j
+x
+j
+<
+1
+j
+x
+j
+0
+:
+5
+otherwise
+;
+(3)
+isarobust
+L
+1
+lossthatislesssensitiveto outliersthanthe
+L
+2
+lossusedinR-CNNandSPPnet. Whentheregression
+targetsareunbounded,training with
+L
+2
+losscanrequire
+carefultuningoflearningratesinordertopreventexploding
+
+gradients. Eq.
+3
+eliminatesthissensitivity.
+Thehyper-parameter
+
+inEq.
+1
+controlsthebalancebe-
+tweenthetwotasklosses. Wenormalizetheground-truth
+
+regressiontargets
+v
+i
+tohavezeromeanandunitvariance.
+Allexperiments use
+
+=1
+.
+Wenotethat[
+6
+]usesarelatedlosstotrainaclass-
+agnosticobjectproposalnetwork.Differentfromourap-
+
+proach,[
+6
+]advocates foratwo-network systemthatsepa-
+rateslocalizationandclassication.OverFeat[
+19
+],R-CNN
+[
+9
+],andSPPnet[
+11
+]alsotrainclassiersandbounding-box
+localizers,howeverthesemethodsusestage-wisetraining,
+
+whichweshowissuboptimalforFastR-CNN(Section
+5.1
+).
+Mini-batchsampling.
+Duringne-tuning,eachSGD
+mini-batchisconstructedfrom
+N
+=2
+images,chosenuni-
+formlyatrandom(asiscommonpractice,weactuallyiter-
+
+ateoverpermutationsofthedataset).Weusemini-batches
+
+ofsize
+R
+=128
+,sampling
+64
+RoIsfromeachimage.As
+in[
+9
+],wetake25%oftheRoIsfromobjectproposals that
+haveintersectionoverunion(IoU)overlapwith aground-
+
+truthboundingboxofatleast
+0
+:
+5
+.TheseRoIscomprise
+theexampleslabeledwithaforegroundobjectclass,
+i.e
+.
+u
+
+1
+.TheremainingRoIsaresampledfromobjectpro-
+posalsthathaveamaximumIoUwithgroundtruthinthein-
+
+terval
+[0
+:
+1
+;
+0
+:
+5)
+,following[
+11
+].Theseare the background
+examplesandarelabeledwith
+u
+=0
+.Thelowerthreshold
+of
+0
+:
+1
+appearstoactasaheuristicforhardexamplemining
+[
+8
+].During training,imagesarehorizontallyippedwith
+probability
+0
+:
+5
+.Nootherdataaugmentationisused.
+Back-propagationthroughRoIpoolinglayers.
+Back-
+propagationroutesderivativesthroughtheRoIpooling
+
+layer.Forclarity, weassumeonlyoneimagepermini-batch
+
+(N
+=1
+),thoughtheextensionto
+N>
+1
+is straightforward
+because theforward passtreatsallimagesindependently.
+Let
+x
+i
+2
+R
+bethe
+i
+-thactivation inputintotheRoIpool-
+inglayerandlet
+y
+rj
+bethelayer's
+j
+-thoutputfromthe
+r
+-
+thRoI.TheRoIpoolinglayercomputes
+y
+rj
+=
+x
+i
+
+(
+r;j
+)
+,in
+which
+i
+
+(
+r;j
+)=argmax
+i
+0
+2R
+(
+r;j
+)
+x
+i
+0
+.
+R
+(
+r;j
+)
+istheindex
+1442
+
+setofinputsinthesub-windowoverwhichtheoutputunit
+
+y
+rj
+max pools.Asingle
+x
+i
+may beassignedto severaldif-
+ferent outputs
+y
+rj
+.
+TheRoIpoolinglayer's
+backwards
+function computes
+partialderivativeof thelossfunctionwithrespect toeach
+
+inputvariable
+x
+i
+byfollowingtheargmaxswitches:
+@L
+@x
+i
+=
+X
+r
+X
+j
+[
+i
+=
+i
+
+(
+r;j
+)]
+@L
+@y
+rj
+:
+(4)
+In words,foreachmini-batchRoI
+r
+andforeachpooling
+outputunit
+y
+rj
+,thepartialderivative
+@L=@y
+rj
+isaccumu-
+latedif
+i
+is theargmaxselectedfor
+y
+rj
+bymaxpooling.
+Inback-propagation,thepartialderivatives
+@L=@y
+rj
+areal-
+readycomputedbythe
+backwards
+functionofthelayer
+ontopoftheRoIpoolinglayer.
+
+SGDhyper-parameters.
+The fullyconnectedlayersused
+forsoftmaxclassicationandbounding-boxregressionare
+
+initializedfromzero-meanGaussiandistributionswithstan-
+
+darddeviations
+0
+:
+01
+and
+0
+:
+001
+,respectively.Biasesareini-
+tializedto
+0
+.Alllayersuseaper-layerlearningrateof1for
+weightsand2forbiasesandagloballearningrateof
+0
+:
+001
+.
+WhentrainingonVOC07orVOC12trainvalwerunSGD
+
+for30kmini-batchiterations, andthenlowerthelearning
+
+rateto
+0
+:
+0001
+andtrainforanother10kiterations.When
+wetrainonlargerdatasets, werunSGDformoreiterations,
+
+asdescribedlater.Amomentumof
+0
+:
+9
+and parameterdecay
+of
+0
+:
+0005
+(onweightsandbiases)areused.
+2.4.Scaleinvariance
+Weexploretwowaysofachievingscaleinvariantob-
+jectdetection:(1)viaﬁbruteforceﬂlearningand(2)byus-
+
+ingimagepyramids.Thesestrategiesfollowthetwoap-
+
+proachesin[
+11
+].Inthebrute-forceapproach,eachimage
+isprocessedatapre-denedpixelsizeduringbothtraining
+
+andtesting.Thenetworkmustdirectly learn scale-invariant
+
+objectdetectionfromthetrainingdata.
+Themulti-scaleapproach,incontrast,providesapprox-
+imatescale-invariancetothenetworkthroughanimage
+
+pyramid.Attest-time,theimagepyramidisusedtoap-
+
+proximatelyscale-normalizeeachobjectproposal.During
+
+multi-scaletraining,werandomlysampleapyramidscale
+
+eachtimeanimageissampled,following [
+11
+],asaformof
+data augmentation.Weexperimentwithmulti-scaletrain-
+
+ingforsmallernetworksonly,duetoGPUmemorylimits.
+
+3.Fast R-CNNdetection
+OnceaFastR-CNNnetworkisne-tuned, detection
+amountstolittlemorethanrunninga forwardpass(assum-
+
+ingobject proposalsarepre-computed).Thenetworktakes
+
+asinputanimage(oranimagepyramid,encodedasalist
+
+ofimages)anda listof
+R
+objectproposalstoscore.At
+test-time,
+R
+istypicallyaround
+2000
+,althoughwewillcon-
+sidercases inwhichitislarger(
+ˇ
+45
+k).Whenusingan
+imagepyramid,eachRoIisassignedto the scalesuch that
+
+thescaledRoIisclosestto
+224
+2
+pixelsinarea[
+11
+].
+ForeachtestRoI
+r
+,theforwardpassoutputsaclass
+posteriorprobabilitydistribution
+p
+andasetofpredicted
+bounding-boxoffsetsrelativeto
+r
+(eachofthe
+K
+classes
+getsitsownrenedbounding-boxprediction).We assigna
+
+detectioncondenceto
+r
+foreachobjectclass
+k
+usingthe
+estimatedprobabilityPr
+(
+class
+=
+k
+j
+r
+)
+
+=
+p
+k
+.Wethen
+performnon-maximumsuppressionindependentlyforeach
+
+classusingthealgorithmandsettingsfromR-CNN[
+9
+].
+3.1.TruncatedSVDforfasterdetection
+Forwhole-imageclassication,thetimespentcomput-
+ingthefully connectedlayersissmallcomparedtotheconv
+
+layers.Onthecontrary,fordetectionthenumberofRoIs
+
+toprocessislargeandnearlyhalfoftheforwardpasstime
+
+isspentcomputingthefullyconnectedlayers(seeFig.
+2
+).
+Largefullyconnectedlayersareeasilyacceleratedbycom-
+
+pressingthemwithtruncatedSVD[
+5
+,
+23
+].
+Inthistechnique,alayerparameterizedbythe
+u
+
+v
+weightmatrix
+W
+isapproximatelyfactorizedas
+W
+ˇ
+U
+
+t
+V
+T
+(5)
+usingSVD.Inthisfactorization,
+U
+isa
+u
+
+t
+matrixcom-
+prisingtherst
+t
+left-singularvectors of
+W
+,
+
+t
+isa
+t
+
+t
+diagonalmatrixcontainingthe top
+t
+singularvaluesof
+W
+,
+and
+V
+is
+v
+
+t
+matrixcomprisingtherst
+t
+right-singular
+vectorsof
+W
+.TruncatedSVDreducestheparametercount
+from
+uv
+to
+t
+(
+u
++
+v
+)
+,whichcanbesignicantif
+t
+ismuch
+smallerthan
+min(
+u;v
+)
+.Tocompressanetwork,thesingle
+fullyconnectedlayercorrespondingto
+W
+isreplacedby
+twofullyconnectedlayers,withoutanon-linearitybetween
+
+them.Therstof theselayersusestheweightmatrix
+
+t
+V
+T
+(andnobiases)andtheseconduses
+U
+(withtheoriginalbi-
+asesassociatedwith
+W
+).Thissimple compressionmethod
+givesgoodspeedupswhenthenumberofRoIsislarge.
+
+4.Mainresults
+Three mainresultssupportthispaper'scontributions:
+1.State-of-the-artmAPonVOC07,2010,and2012
+
+2.FasttrainingandtestingcomparedtoR-CNN,SPPnet
+
+3.Fine-tuningconvlayersinVGG16improvesmAP
+4.1.Experimentalsetup
+Ourexperimentsusethreepre-trainedImageNetmodels
+thatareavailableonline.
+2
+Therstisthe CaffeNet(essen-
+tiallyAlexNet[
+14
+])fromR-CNN[
+9
+].Wealternativelyrefer
+2
+https://github.com/BVLC/caffe/wiki/Model-Zoo
+1443
+
+method
+trainset
+aero
+bikebirdboatbottlebuscar catchaircowtabledoghorsembikepersnplantsheepsofatrain tv
+mAP
+SPPnetBB[
+11
+]
+y
+07
+n
+diff
+73.9
+72.362.551.5 44.474.473.074.442.373.657.770.374.674.354.2 34.056.456.467.973.5
+63.1
+R-CNNBB[
+10
+]
+07
+73.4
+77.063.445.4
+44.6
+75.178.179.840.573.762.279.478.173.164.2
+35.6
+66.8 67.270.4
+71.1
+66.0
+FRCN[ours]
+07
+74.5
+78.369.253.2 36.677.378.282.040.772.767.979.679.273.069.0 30.165.470.275.865.8
+66.9
+FRCN[ours]
+07
+n
+diff
+74.6
+79.0
+68.657.0 39.379.5
+78.6
+81.9
+48.0
+74.067.480.580.774.169.631.867.1 68.475.365.5
+68.1
+FRCN[ours]
+07+12
+77.0
+78.1
+69.359.4
+38.3
+81.678.686.7
+42.8
+78.868.984.782.076.669.9
+31.8
+70.1 74.880.4
+70.4
+70.0
+Table1.
+VOC2007test
+detection averageprecision (%).AllmethodsuseVGG16.Trainingsetkey:
+07
+:VOC07trainval,
+07
+n
+diff
+:
+07
+withoutﬁdifcultﬂexamples,
+07+12
+:unionof
+07
+andVOC12trainval.
+y
+SPPnetresultswerepreparedbytheauthors of[
+11
+].
+method
+trainset
+aero
+bikebirdboatbottlebuscar catchaircowtabledoghorsembikepersnplantsheepsofatrain tv
+mAP
+BabyLearning
+Prop.
+77.7
+73.862.348.8 45.467.367.080.341.370.849.779.574.778.664.5 36.069.955.770.461.7
+63.8
+R-CNNBB[
+10
+]
+12
+79.3
+72.463.144.0 44.464.666.384.938.867.348.482.375.076.765.7 35.866.254.869.158.8
+62.9
+SegDeepM
+12+seg
+82.3
+75.267.150.7
+49.8
+71.169.688.242.571.250.085.776.681.869.3
+41.571.9
+62.273.2
+64.6
+67.2
+FRCN[ours]
+12
+80.1
+74.467.749.4 41.474.268.887.841.970.150.286.177.381.170.4 33.367.063.377.260.0
+66.1
+FRCN[ours]
+07++12
+82.0
+77.871.655.3
+42.4
+77.371.789.344.572.153.787.780.082.572.7
+36.668.7
+65.481.1
+62.7
+68.8
+Table2.
+VOC2010test
+detectionaverage precision(%).BabyLearningusesanetworkbasedon[
+17
+].AllothermethodsuseVGG16.
+Trainingsetkey:
+12
+:VOC12trainval,
+Prop.
+:proprietary dataset,
+12+seg
+:
+12
+withsegmentationannotations,
+07++12
+:unionofVOC07
+trainval,VOC07test,andVOC12trainval.
+method
+trainset
+aero
+bikebirdboatbottlebuscar catchaircowtabledoghorsembikepersnplantsheepsofatrain tv
+mAP
+BabyLearning
+Prop.
+78.0
+74.261.345.7 42.768.266.880.240.670.049.879.074.577.964.0 35.367.955.768.762.6
+63.2
+NUS
+NIN
+c2000
+Unk.
+80.2
+73.861.943.7
+43.0
+70.367.680.741.969.751.778.275.276.965.1
+38.668.3
+58.068.763.3
+63.8
+R-CNNBB[
+10
+]
+12
+79.6
+72.761.941.2 41.965.966.484.638.567.246.782.074.876.065.2 35.665.454.267.460.3
+62.4
+FRCN[ours]
+12
+80.3
+74.766.946.9 37.773.968.687.741.771.151.186.077.879.869.8 32.165.563.876.461.7
+65.7
+FRCN[ours]
+07++12
+82.3
+78.470.852.3
+38.7
+77.871.689.344.273.055.087.580.580.872.0
+35.1
+68.3 65.780.464.2
+68.4
+Table3.
+VOC2012test
+detectionaverageprecision(%).BabyLearningandNUS
+NIN
+c2000usenetworksbasedon[
+17
+].Allother
+methodsuseVGG16.Trainingsetkey:seeTable
+2
+,
+Unk.
+:unknown.
+tothisCaffeNetasmodel
+S
+,forﬁsmall.ﬂThesecondnet-
+workisVGG
+CNN
+M
+1024from[
+3
+],whichhasthesame
+depth as
+S
+,butiswider.Wecallthisnetworkmodel
+M
+,
+forﬁmedium.ﬂThenalnetwork istheverydeepVGG16
+
+modelfrom[
+20
+].Sincethismodelisthelargest,wecall
+itmodel
+L
+.Inthissection,allexperimentsuse
+single-scale
+trainingandtesting(
+s
+=600
+;see Section
+5.2
+for details).
+4.2.VOC2010and 2012results
+Onthesedatasets,wecompareFastR-CNN(
+FRCN
+,for
+short)againstthetop methodsonthe
+comp4
+(outsidedata)
+trackfromthe publicleaderboard(Table
+2
+,Table
+3
+).
+3
+For
+theNUS
+NIN
+c2000andBabyLearningmethods,thereare
+noassociatedpublicationsatthistimeandwecouldnot
+
+ndexactinformation ontheConvNetarchitecturesused;
+
+theyarevariantsoftheNetwork-in-Networkdesign[
+17
+].
+Allothermethodsareinitializedfromthesamepre-trained
+
+VGG16network.
+FastR-CNNachievesthetop resultonVOC12witha
+mAPof65.7%(and68.4%withextradata).Itisalsotwo
+
+ordersofmagnitude fasterthantheothermethods,which
+
+areallbasedontheﬁslowﬂR-CNNpipeline.OnVOC10,
+3
+http://host.robots.ox.ac.uk:8080/leaderboard
+(accessedApril18,2015)
+SegDeepM[
+25
+]achievesahighermAPthanFastR-CNN
+(67.2%vs.66.1%).SegDeepM istrained onVOC12train-
+
+valplussegmentationannotations; itisdesignedtoboost
+
+R-CNNaccuracybyusingaMarkovrandom eldtoreason
+
+overR-CNNdetectionsandsegmentationsfromtheO
+2
+P
+[
+1
+]semantic-segmentationmethod. FastR-CNNcanbe
+swappedintoSegDeepMinplaceofR-CNN,whichmay
+
+leadtobetter results.Whenusingtheenlarged07++12
+
+trainingset(seeTable
+2
+caption),FastR-CNN'smAPin-
+creasesto68.8%,surpassingSegDeepM.
+
+4.3.VOC2007results
+OnVOC07,wecompareFastR-CNNtoR-CNNand
+SPPnet.Allmethodsstartfromthesamepre-trained
+
+VGG16networkandusebounding-boxregression.The
+
+VGG16SPPnetresultswerecomputedbytheauthorsof
+
+[11
+].SPPnet usesvescalesduringbothtrainingandtest-
+ing.TheimprovementofFastR-CNNoverSPPnetillus-
+
+tratesthateventhoughFastR-CNNusessingle-scaletrain-
+
+ingandtesting,ne-tuningtheconvlayersprovidesalarge
+
+improvementinmAP(from63.1%to66.9%).R-CNN
+
+achievesamAPof66.0%.Asaminorpoint,SPPnetwas
+
+trainedwithout
+examplesmarkedasﬁdifcultﬂinPASCAL.
+RemovingtheseexamplesimprovesFastR-CNNmAPto
+
+68.1%.Allotherexperimentsuseﬁdifcultﬂexamples.
+1444
+
+4.4.Trainingand testingtime
+Fasttrainingandtestingtimesareoursecondmainre-
+sult.Table
+4
+comparestrainingtime(hours),testingrate
+(seconds perimage),andmAPonVOC07betweenFastR-
+
+CNN,R-CNN,andSPPnet.ForVGG16,FastR-CNNpro-
+
+cessesimages146
+
+fasterthanR-CNNwithouttruncated
+SVDand213
+
+fasterwithit.Trainingtimeisreducedby
+9
+
+,from84hoursto9.5.ComparedtoSPPnet,FastR-
+CNNtrainsVGG162.7
+
+faster(in9.5vs.25.5hours) and
+tests7
+
+faster withouttruncatedSVDor 10
+
+faster withit.
+FastR-CNN alsoeliminateshundredsofgigabytesofdisk
+
+storage,becauseitdoesnotcachefeatures.
+FastR-CNN
+R-CNN
+SPPnet
+SML
+SML
+y
+L
+traintime(h)
+1.2
+2.09.5
+222884
+25
+trainspeedup
+18.3
+
+14.0
+
+8.8
+
+1
+
+1
+
+1
+
+3.4
+
+testrate(s/im)
+0.100.150.32
+9.812.147.0
+2.3
+B
+withSVD
+0.06
+0.080.22
+---
+-
+testspeedup
+98
+
+80
+
+146
+
+1
+
+1
+
+1
+
+20
+
+B
+withSVD
+169
+
+150
+
+213
+
+---
+-
+VOC07mAP
+57.159.2
+66.9
+58.560.266.0
+63.1
+B
+withSVD
+56.558.766.6
+---
+-
+Table4.RuntimecomparisonbetweenthesamemodelsinFast R-
+
+CNN,R-CNN,andSPPnet. Fast R-CNNusessingle-scalemode.
+
+SPPnetusesthevescalesspeciedin[
+11
+].
+y
+Timingprovidedby
+theauthorsof[
+11
+].TimesweremeasuredonanNvidiaK40GPU.
+TruncatedSVD.
+TruncatedSVDcanreducedetection
+timebymorethan30%withonlyasmall(0.3percent-
+
+agepoint)dropin mAPandwithoutneedingtoperform
+
+additionalne-tuningaftermodelcompression.Fig.
+2
+il-
+lustrateshowusingthetop
+1024
+singularvaluesfromthe
+25088
+
+4096
+matrixinVGG16'sfc6layer andthetop
+256
+singularvaluesfromthe
+4096
+
+4096
+fc7layerreducesrun-
+timewithlittlelossinmAP.Furtherspeed-upsarepossi-
+
+blewithsmallerdropsinmAPifonene-tunesagainafter
+
+compression.roi_pool5
+5.4% (17ms)
+other
+3.5% (11ms)
+fc6
+38.7% (122ms)
+conv
+46.3% (146ms)
+fc7
+6.2% (20ms)
+Forward pass timing
+mAP 66.9% @ 320ms / image
+roi_pool5
+7.9% (17ms)
+other
+5.1% (11ms)
+fc6
+17.5% (37ms)
+conv
+67.8% (143ms)
+fc7
+1.7% (4ms)
+Forward pass timing (SVD)
+mAP 66.6% @ 223ms / image
+Figure2.Timing forVGG16beforeandaftertruncatedSVD.Be-
+
+fore SVD,fullyconnectedlayersfc6andfc7take45%ofthetime.
+4.5.Whichlayersto
+ForthelessdeepnetworksconsideredintheSPPnetpa-
+per[
+11
+],ne-tuningonly thefullyconnectedlayersap-
+pearedtobesufcientforgoodaccuracy.We hypothesized
+
+thatthisresultwouldnotholdforverydeepnetworks.To
+
+validatethatne-tuningtheconvlayersisimportantfor
+
+VGG16,weuseFastR-CNNtone-tune,but
+freeze
+the
+thirteenconvlayerssothatonlythe fullyconnectedlayers
+
+learn.Thisablationemulatessingle-scale SPPnettraining
+
+anddecreasesmAPfrom66.9%to61.4%
+(Table
+5
+).This
+experimentveriesourhypothesis:trainingthroughtheRoI
+
+poolinglayerisimportantforverydeepnets.
+layersthatarene-tunedinmodel
+L
+SPPnet
+L
+
+fc6
+
+conv3
+1
+
+conv2
+1
+
+fc6
+VOC07mAP
+61.466.9
+67.2
+63.1
+testrate(s/im)
+0.320.32 0.32
+2.3
+Table5.Effectofrestrictingwhichlayersarene-tunedfor
+
+VGG16.Fine-tuning
+
+fc6emulatestheSPPnettrainingalgo-
+rithm[
+11
+],butusingasinglescale.SPPnet
+L
+resultswereob-
+tainedusingvescales,atasignicant(7
+
+)speedcost.
+Doesthismeanthat
+all
+conv layers shouldbene-tuned?
+Inshort,
+no
+.Inthesmallernetworks(
+S
+and
+M
+)wend
+thatconv1isgenericandtaskindependent(awell-known
+
+fact[
+14
+]).Allowingconv1tolearn,ornot,hasnomean-
+ingfuleffectonmAP.ForVGG16,wefounditonlynec-
+
+essarytoupdatelayersfromconv3
+1andup(9 ofthe13
+convlayers).Thisobservationispragmatic:(1)updating
+
+fromconv2
+1 slowstrainingby1.3
+
+(12.5vs.9.5hours)
+comparedtolearningfromconv3
+1;and(2)updatingfrom
+conv1
+1over-runsGPU memory.Thedifference inmAP
+whenlearningfrom conv2
+1upwasonly
++0
+:
+3
+points(Ta-
+ble
+5
+,lastcolumn).AllFastR-CNNresultsinthispaper
+usingVGG16ne-tune layers conv3
+1and up;allexperi-
+mentswithmodels
+S
+and
+M
+ne-tunelayersconv2andup.
+5.Designevaluation
+We conductedexperimentstounderstandhowFastR-
+CNNcomparestoR-CNNandSPPnet,aswellastoeval-
+
+uatedesigndecisions.Followingbestpractices,weper-
+
+formedtheseexperimentsonthePASCALVOC07dataset.
+
+5.1.Doestraininghelp?
+Multi-tasktrainingisconvenientbecauseitavoidsman-
+agingapipeline ofsequentially-trainedtasks.Butitalsohas
+
+thepotentialto improveresultsbecausethetasksinuence
+
+eachotherthroughasharedrepresentation(theConvNet)
+
+[2
+].Doesmulti-tasktrainingimproveobjectdetectionac-
+curacyinFastR-CNN?
+Totestthisquestion,wetrainbaselinenetworksthat
+useonly theclassicationloss,
+L
+cls
+,inEq.
+1
+(
+i.e
+.,setting
+1445
+
+S
+M
+L
+multi-tasktraining?
+XX
+XX
+XX
+stage-wisetraining?
+X
+X
+X
+test-timebboxreg?
+XX
+XX
+XX
+VOC07mAP
+52.253.354.6
+57.1
+54.755.556.6
+59.2
+62.663.464.0
+66.9
+Table6. Multi-tasktraining(forthcolumnpergroup)improvesmAPoverpiecewisetraining(thirdcolumnpergroup).
+
+=0
+).Thesebaselinesareprintedformodels
+S
+,
+M
+,and
+L
+intherstcolumnofeachgroupinTable
+6
+.Notethatthese
+models
+donot
+havebounding-boxregressors.Next(second
+columnpergroup),wetakenetworksthatweretrainedwith
+
+themulti-taskloss(Eq.
+1
+,
+
+=1
+),butwe
+disable
+bounding-
+boxregressionattesttime.This isolatesthenetworks'clas-
+
+sicationaccuracyandallowsanapples-to-applescompar-
+
+isonwiththebaselinenetworks.
+Acrossallthree networksweobservethatmulti-task
+trainingimprovespureclassicationaccuracyrelativeto
+
+trainingforclassicationalone.Theimprovementranges
+
+from+0
+:
+8
+to
++1
+:
+1
+mAPpoints,showingaconsistentposi-
+tiveeffectfrommulti-tasklearning.
+Finally,wetakethebaselinemodels(trainedwithonly
+theclassicationloss),tackonthebounding-boxregression
+
+layer,andtrainthemwith
+L
+loc
+whilekeepingallothernet-
+workparametersfrozen.Thethirdcolumnineachgroup
+
+shows theresultsofthis
+stage-wise
+trainingscheme:mAP
+improvesovercolumnone,butstage-wisetrainingunder-
+
+performsmulti-tasktraining(forthcolumnper group).
+
+5.2.Scaleinvariance:tobruteforceornesse?
+Wecomparetwostrategies forachievingscale-invariant
+objectdetection:brute-forcelearning(singlescale)andim-
+
+age pyramids(multi-scale).Ineithercase,wedenethe
+
+scales
+ofanimagetobethelengthofits
+shortest
+side.
+Allsingle-scaleexperimentsuse
+s
+=600
+pixels;
+s
+may
+belessthan
+600
+forsomeimagesaswe cap thelongestim-
+agesideat
+1000
+pixelsandmaintaintheimage'saspectra-
+tio.Thesevalueswereselectedsothat VGG16tsinGPU
+
+memoryduringne-tuning.Thesmallermodelsarenot
+
+memory boundandcanbenetfromlargervaluesof
+s
+;how-
+ever,optimizing
+s
+foreach modelisnotourmainconcern.
+Wenote thatPASCALimagesare
+384
+
+473
+pixelsonav-
+erageandthusthesingle-scalesettingtypicallyupsamples
+
+images byafactorof1.6.Theaverageeffectivestrideatthe
+
+RoIpoolinglayeristhus
+ˇ
+10
+pixels.
+Inthemulti-scalesetting,weusethesameve scales
+speciedin[
+11
+](
+s
+2f
+480
+;
+576
+;
+688
+;
+864
+;
+1200
+g
+)tofacili-
+tatecomparisonwithSPPnet.However,wecapthelongest
+
+sideat
+2000
+pixelstoavoidexceedingGPUmemory.
+Table
+7
+showsmodels
+S
+and
+M
+whentrained andtested
+witheitheroneorvescales.Perhapsthemostsurpris-
+
+ingresultin[
+11
+]was thatsingle-scaledetectionperforms
+almostaswellasmulti-scaledetection.Ourndingscon-
+SPPnet
+ZF
+S
+M
+L
+scales
+15
+15
+15
+1
+testrate(s/im)
+0.140.38
+0.10
+0.39
+0.150.64
+0.32
+VOC07mAP
+58.059.2
+57.158.4
+59.260.7
+66.9
+Table7.Multi-scalevs.singlescale.SPPnet
+ZF
+(similartomodel
+S
+) resultsarefrom[
+11
+].Largernetworkswithasingle-scaleoffer
+thebestspeed/accuracytradeoff.(
+L
+cannotusemulti-scaleinour
+implementationduetoGPUmemoryconstraints.)
+
+rmtheirresult: deepConvNetsareadeptatdirectlylearn-
+
+ingscaleinvariance.Themulti-scaleapproachoffersonly
+
+a smallincreaseinmAPata largecostincomputetime
+
+(Table
+7
+).InthecaseofVGG16(model
+L
+), we arelim-
+itedtousingasinglescalebyimplementationdetails.Yetit
+
+achievesamAPof66.9%,whichisslightlyhigherthanthe
+
+66.0%reportedforR-CNN[
+10
+],eventhough R-CNNuses
+ﬁinniteﬂscalesinthesensethateachproposaliswarpedto
+
+acanonicalsize.
+Sincesingle-scaleprocessingoffersthebesttradeoffbe-
+tweenspeedandaccuracy,especiallyforverydeepmodels,
+
+all experimentsoutsideofthissub-sectionusesingle-scale
+
+trainingandtestingwith
+s
+=600
+pixels.
+5.3.Doweneedmore trainingdata?
+Agoodobjectdetectorshouldimprovewhensupplied
+withmoretrainingdata.Zhu
+etal
+.[
+24
+]foundthatDPM[
+8
+]
+mAPsaturatesafteronlyafewhundredtothousandtrain-
+
+ingexamples.HereweaugmenttheVOC07trainvalset
+
+withtheVOC12trainvalset,roughlytriplingthenumber
+
+ofimagesto16.5k,to evaluateFastR-CNN.Enlargingthe
+
+trainingsetimprovesmAPonVOC07testfrom66.9%to
+
+70.0%(Table
+1
+).Whentrainingonthisdatasetweuse60k
+mini-batch iterationsinsteadof40k.
+WeperformsimilarexperimentsforVOC10and2012,
+forwhichweconstructadatasetof21.5kimagesfrom the
+
+unionofVOC07trainval,test,andVOC12trainval.When
+
+trainingonthisdataset,weuse100kSGDiterationsand
+
+lowerthelearningrateby
+0
+:
+1
+
+each40kiterations(instead
+ofeach30k).ForVOC10and2012,mAPimprovesfrom
+
+66.1%to68.8%andfrom65.7%to68.4%,respectively.
+
+5.4.DoSVMsoutperformsoftmax?
+FastR-CNNusesthesoftmaxclassierlearntduring
+ne-tuning insteadoftrainingone-vs-restlinearSVMs
+1446
+
+post-hoc,aswasdoneinR-CNNandSPPnet.Tounder-
+
+standtheimpactofthischoice,weimplementedpost-hoc
+
+SVMtrainingwithhardnegativemininginFastR-CNN.
+
+Weusethesametrainingalgorithmandhyper-parameters
+
+asinR-CNN.
+method
+classier
+S
+M
+L
+R-CNN[
+9
+,
+10
+]
+SVM
+58.5
+60.2
+66.0
+FRCN[ours]
+SVM
+56.3
+58.7
+66.8
+FRCN[ours]
+softmax
+57.1
+59.2
+66.9
+Table8. FastR-CNNwithsoftmaxvs.SVM(VOC07mAP).
+Table
+8
+showssoftmaxslightly outperformingSVMfor
+allthreenetworks,by
++0
+:
+1
+to
++0
+:
+8
+mAPpoints. Thisef-
+fectissmall,butitdemonstratesthatﬁone-shotﬂne-tuning
+
+issufcientcomparedtopreviousmulti-stagetrainingap-
+
+proaches. Wenotethatsoftmax,unlikeone-vs-restSVMs,
+
+introducescompetitionbetweenclasseswhen scoringaRoI.
+
+5.5.Are more proposalsalways better?
+Thereare(broadly)twotypesofobjectdetectors:those
+thatusea
+sparse
+setofobjectproposals(
+e.g
+.,selective
+search[
+21
+]) andthosethatusea
+dense
+set(
+e.g
+.,DPM[
+8
+]).
+Classifyingsparseproposalsis atypeof
+cascade
+[
+22
+]in
+whichtheproposalmechanismrstrejectsavastnumberof
+
+candidatesleavingtheclassierwithasmallsettoevaluate.
+
+Thiscascade improvesdetectionaccuracywhenappliedto
+
+DPMdetections[
+21
+].Wendevidencethatthe proposal-
+classiercascadealsoimprovesFastR-CNNaccuracy.
+Usingselectivesearch's
+qualitymode
+,wesweep from1k
+to10kproposalsperimage,eachtime
+re-training
+and
+re-
+testing
+model
+M
+.Ifproposalsserveapurelycomputational
+role,increasingthenumberofproposalsperimageshould
+
+notharmmAP.
+Figure3.VOC07testmAPandARfor variousproposalschemes.
+WendthatmAPrisesandthenfallsslightlyasthepro-
+posalcountincreases(Fig.
+3
+,solidblueline).Thisexper-
+imentshowsthatswampingthedeepclassierwithmore
+
+proposalsdoesnothelp,andevenslightlyhurts,accuracy.
+Thisresultisdifculttopredictwithoutactuallyrunning
+theexperiment.Thestate-of-the-artformeasuringobject
+
+proposalqualityisAverageRecall(AR)[
+12
+].ARcorrelates
+wellwithmAPforseveralproposalmethodsusingR-CNN,
+
+whenusingaxednumberofproposalsperimage
+.Fig.
+3
+showsthatAR(solidredline)doesnotcorrelatewellwith
+
+mAPasthenumberofproposalsperimageisvaried.AR
+
+mustbeusedwithcare;higherARduetomoreproposals
+
+doesnotimplythatmAPwill increase.Fortunately,training
+
+andtestingwithmodel
+M
+takeslessthan2.5hours.Fast
+R-CNNthusenablesefcient,directevaluationofobject
+
+proposalmAP,whichispreferabletoproxymetrics.
+WealsoinvestigateFastR-CNNwhenusing
+densely
+generatedboxes(overscale,position,andaspect ratio),at
+
+arateofabout45kboxes /image.Thisdensesetisrich
+
+enoughthatwheneachselectivesearchboxisreplacedby
+
+itsclosest(in IoU)densebox,mAPdropsonly1point(to
+
+57.7%,Fig.
+3
+,bluetriangle).
+Thestatistics ofthe denseboxesdifferfromthoseof
+selectivesearchboxes.Startingwith2kselectivesearch
+
+boxes,wetestmAPwhen
+adding
+arandomsampleof
+1000
+f
+2
+;
+4
+;
+6
+;
+8
+;
+10
+;
+32
+;
+45
+g
+denseboxes.Foreachexper-
+imentwere-trainandre-testmodel
+M
+.Whenthesedense
+boxesareadded,mAPfallsmorestronglythanwhenadding
+
+moreselectivesearchboxes,eventuallyreaching53.0%.
+WealsotrainandtestFastR-CNNusing
+only
+dense
+boxes(45k/image).ThissettingyieldsamAPof52.9%
+
+(bluediamond).Finally,wecheckifSVMswithhardnega-
+
+tiveminingareneededtocopewiththedenseboxdistribu-
+
+tion. SVMsdoevenworse:49.3%(bluecircle).
+
+5.6.PreliminaryMSCOCOresults
+WeappliedFastR-CNN(withVGG16)totheMS
+COCOdataset[
+18
+]toestablishapreliminarybaseline.We
+trainedonthe80kimagetrainingsetfor240kiterationsand
+
+evaluatedontheﬁtest-devﬂsetusingtheevaluationserver.
+
+ThePASCAL-stylemAPis35.9%;thenewCOCO-style
+
+AP,whichalsoaveragesoverIoUthresholds,is19.7%.
+
+6.Conclusion
+Thispaperproposes FastR-CNN,acleanandfastupdate
+toR-CNNandSPPnet.Inadditiontoreportingstate-of-the-
+
+artdetectionresults,wepresentdetailedexperimentsthat
+
+wehopeprovidenewinsights. Ofparticularnote,sparse
+
+objectproposalsappeartoimprovedetectorquality.This
+
+issuewastoocostly(intime)toprobeinthepast,butbe-
+
+comespracticalwith FastR-CNN.Ofcourse,theremayex-
+
+istyetundiscoveredtechniquesthatallowdenseboxesto
+
+perform aswellassparseproposals.Suchmethods,ifde-
+
+veloped,mayhelpfurtheraccelerateobjectdetection.
+
+Acknowledgements.
+IthankKaimingHe,LarryZitnick,
+and PiotrDoll
+´
+arforhelpfuldiscussionsandencouragement.
+1447
+
+References
+[1]J.Carreira,R.Caseiro,J.Batista,and C.Sminchisescu.Se-
+manticsegmentationwithsecond-orderpooling.In
+ECCV
+,
+2012.
+5
+[2]R.Caruana.Multitasklearning.
+Machinelearning
+,28(1),
+1997.
+6
+[3]K.Chateld,K.Simonyan,A.Vedaldi,andA.Zisserman.
+Return ofthe devilinthe details:Delving deepintoconvo-
+
+lutionalnets.In
+BMVC
+, 2014.
+5
+[4]J.Deng,W.Dong,R.Socher,L.-J.Li,K.Li,andL.Fei-
+Fei.ImageNet:Alarge-scalehierarchicalimagedatabase.
+
+InCVPR
+, 2009.
+2
+[5]E.Denton,W.Zaremba,J.Bruna,Y.LeCun,andR.Fergus.
+Exploitinglinearstructurewithinconvolutionalnetworksfor
+
+efcientevaluation.In
+NIPS
+, 2014.
+4
+[6]D.Erhan, C.Szegedy,A.Toshev,andD.Anguelov.Scalable
+objectdetectionusingdeepneuralnetworks.In
+CVPR
+,2014.
+3
+[7]M.Everingham,L.VanGool,C.K.I.Williams,J. Winn,and
+A.Zisserman.ThePASCALVisualObjectClasses(VOC)
+
+Challenge.IJCV
+, 2010.
+1
+[8]P.Felzenszwalb,R.Girshick,D.McAllester,andD.Ra-
+manan.Objectdetectionwithdiscriminativelytrainedpart
+
+basedmodels.
+TPAMI
+, 2010.
+3
+,
+7
+,
+8
+[9]R. Girshick,J.Donahue,T.Darrell,andJ.Malik.Richfea-
+turehierarchiesforaccurateobjectdetectionand semantic
+
+segmentation.In
+CVPR
+, 2014.
+1
+,
+3
+,
+4
+,
+8
+[10]R.Girshick,J.Donahue,T.Darrell,andJ.Malik.Region-
+basedconvolutionalnetworksforaccurateobjectdetection
+
+andsegmentation.
+TPAMI
+, 2015.
+5
+,
+7
+,
+8
+[11]K.He,X.Zhang,S.Ren,andJ.Sun.Spatialpyramidpooling
+indeepconvolutionalnetworksforvisual recognition.In
+
+ECCV, 2014.
+1
+,
+2
+,
+3
+,
+4
+,
+5
+,
+6
+,
+7
+[12]J.H.Hosang, R.Benenson,P.Doll
+´
+ar,andB.Schiele.What
+makesforeffectivedetectionproposals?
+arXivpreprint
+arXiv:1502.05082
+, 2015.
+8
+[13]Y.Jia,E.Shelhamer,J.Donahue,S.Karayev,J.Long,R.Gir-
+shick,S.Guadarrama,andT.Darrell.Caffe:Convolutional
+
+architectureforfastfeatureembedding.In
+Proc.oftheACM
+InternationalConf. onMultimedia
+, 2014.
+2
+[14]A.Krizhevsky,I.Sutskever,andG.Hinton.ImageNetclas-
+sicationwithdeepconvolutionalneuralnetworks.In
+NIPS
+,
+2012.
+1
+,
+4
+,
+6
+[15]S.Lazebnik,C.Schmid,andJ.Ponce.Beyondbagsof
+features:Spatialpyramidmatchingforrecognizingnatural
+
+scenecategories.In
+CVPR
+, 2006.
+1
+[16]Y.LeCun,B.Boser,J.Denker,D.Henderson,R.Howard,
+W.Hubbard,andL. Jackel.Backpropagationappliedto
+
+handwrittenzipcoderecognition.
+NeuralComp.
+, 1989.
+1
+[17]M.Lin,Q.Chen,andS.Yan.Networkinnetwork.In
+ICLR
+,
+2014.
+5
+[18]T.Lin, M.Maire,S.Belongie,L. Bourdev,R.Girshick,
+J.Hays,P.Perona,D.Ramanan,P.Doll
+´
+ar,andC.L. Zit-
+nick. MicrosoftCOCO:commonobjectsincontext.
+arXiv
+e-prints
+, arXiv:1405.0312[cs.CV],2014.
+8
+[19]P.Sermanet,D.Eigen,X.Zhang,M.Mathieu,R.Fergus,
+andY.LeCun.OverFeat:IntegratedRecognition,Localiza-
+
+tion andDetectionusingConvolutional Networks.In
+ICLR
+,
+2014.
+1
+,
+3
+[20]K.SimonyanandA.Zisserman.Verydeepconvolutional
+networksfor large-scaleimagerecognition.In
+ICLR
+,2015.
+1
+,
+5
+[21]J.Uijlings,K.vandeSande,T.Gevers,andA.Smeulders.
+Selectivesearch forobject recognition.
+IJCV
+, 2013.
+8
+[22]P.ViolaandM.Jones.Rapidobjectdetectionusingaboosted
+cascadeofsimplefeatures.In
+CVPR
+, 2001.
+8
+[23]J.Xue,J.Li,andY.Gong.Restructuringofdeepneural
+networkacousticmodelswithsingularvaluedecomposition.
+
+InInterspeech
+, 2013.
+4
+[24]X.Zhu,C.Vondrick,D.Ramanan,andC.Fowlkes.Dowe
+needmoretrainingdataorbettermodelsforobjectdetec-
+
+tion?In
+BMVC
+, 2012.
+7
+[25]Y.Zhu,R.Urtasun,R.Salakhutdinov,andS.Fidler.
+segDeepM:Exploiting segmentationandcontextindeep
+
+neuralnetworksforobjectdetection.In
+CVPR
+,2015.
+1
+,
+5
+1448
+

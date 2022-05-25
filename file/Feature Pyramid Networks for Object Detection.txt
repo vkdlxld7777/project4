@@ -1,0 +1,2510 @@
+FeaturePyramidNetworksforObjectDetection
+Tsung-YiLin
+1,2
+,PiotrDoll
+´
+ar
+1
+,RossGirshick
+1
+,
+KaimingHe
+1
+,BharathHariharan
+1
+,andSergeBelongie
+2
+1
+FacebookAIResearch(FAIR)
+2
+CornellUniversityandCornellTech
+Abstract
+Featurepyramidsareabasiccomponentinrecognition
+systemsfordetectingobjectsatdifferentscales.Butrecent
+
+deeplearningobjectdetectorshaveavoidedpyramidrep-
+
+resentations,inpartbecausetheyarecomputeandmemory
+
+intensive. Inthispaper,weexploittheinherentmulti-scale,
+
+pyramidalhierarchyofdeepconvolutionalnetworkstocon-
+
+structfeaturepyramidswithmarginalextracost.Atop-
+
+downarchitecturewithlateralconnectionsisdevelopedfor
+
+buildinghigh-levelsemantic featuremapsatallscales.This
+
+architecture,calledaFeaturePyramidNetwork(FPN),
+
+showssignicantimprovementas agenericfeatureextrac-
+
+torinseveralapplications.UsingFPNinabasicFaster
+
+R-CNNsystem,ourmethodachievesstate-of-the-artsingle-
+
+modelresultsontheCOCOdetectionbenchmarkwithout
+
+bellsandwhistles, surpassingallexistingsingle-modelen-
+
+triesincludingthosefromtheCOCO2016challengewin-
+
+ners.Inaddition, ourmethodcanrunat5FPSon aGPU
+
+andthusisapracticalandaccuratesolutiontomulti-scale
+
+objectdetection. Codewillbemadepubliclyavailable.
+
+1.Introduction
+Recognizingobjectsatvastlydifferentscalesisafun-
+damentalchallengeincomputervision.
+Featurepyramids
+builtuponimagepyramids
+(forshortwecallthese
+featur-
+izedimagepyramids
+)form thebasisofastandardsolution
+[
+1
+] (Fig.
+1
+(a)).Thesepyramidsarescale-invariantinthe
+sensethatanobject'sscalechangeisoffsetbyshiftingits
+
+levelinthepyramid.Intuitively,thispropertyenablesa
+
+modeltodetectobjectsacrossa largerangeofscalesby
+
+scanningthemodeloverbothpositionsandpyramidlevels.
+Featurizedimage pyramidswereheavilyusedinthe
+eraofhand-engineeredfeatures[
+5
+,
+25
+].Theywereso
+criticalthatobjectdetectorslikeDPM[
+7
+] requireddense
+scalesampling toachievegoodresults (
+e.g
+.,10scalesper
+octave).Forrecognitiontasks,engineered featureshave
+(a) Featurized image pyramid
+predict
+predict
+predict
+predict
+(b) Single feature map
+predict
+(d) Feature Pyramid Network
+predict
+predict
+predict
+(c) Pyramidal feature hierarchy
+predict
+predict
+predict
+Figure1.(a)Usinganimagepyramidto buildafeature pyramid.
+
+Featuresarecomputedoneachoftheimagescalesindependently,
+
+whichisslow.(b)Recentdetectionsystemshaveoptedtouse
+
+onlysinglescalefeaturesforfasterdetection.(c)Analternativeis
+
+toreusethe pyramidalfeaturehierarchycomputedbyaConvNet
+
+asifitwereafeaturizedimagepyramid.(d)OurproposedFeature
+
+PyramidNetwork(FPN)isfastlike(b)and (c),butmore accurate.
+
+Inthisgure,featuremapsareindicatebyblueoutlinesandthicker
+
+outlinesdenotesemanticallystrongerfeatures.
+
+largelybeenreplacedwithfeaturescomputedbydeepcon-
+
+volutionalnetworks(ConvNets)[
+19
+,
+20
+].Asidefrombeing
+capableofrepresentinghigher-levelsemantics,ConvNets
+
+arealsomorerobustto varianceinscaleandthusfacilitate
+
+recognitionfromfeaturescomputedonasingleinputscale
+
+[15
+,
+11
+,
+29
+](Fig.
+1
+(b)).Butevenwiththisrobustness,pyra-
+midsarestillneededtogetthemostaccurateresults.Allre-
+
+cent topentriesintheImageNet[
+33
+]andCOCO[
+21
+]detec-
+tionchallengesusemulti-scaletestingon featurizedimage
+
+pyramids(
+e.g
+.,[
+16
+,
+35
+]).Theprincipleadvantageoffea-
+turizingeachlevelofanimagepyramidisthatitproduces
+
+amulti-scalefeaturerepresentation inwhich
+alllevelsare
+semanticallystrong
+,includingthehigh-resolutionlevels.
+Nevertheless,featurizingeachlevelofanimagepyra-
+midhasobvious limitations.Inferencetimeincreasescon-
+
+siderably(
+e.g
+.,byfourtimes[
+11
+]),makingthisapproach
+impracticalforrealapplications.Moreover,trainingdeep
+1
+2117
+
+networksend-to-endonanimagepyramidisinfeasiblein
+
+termsofmemory,andso,ifexploited,imagepyramidsare
+
+usedonlyattesttime[
+15
+,
+11
+,
+16
+,
+35
+],whichcreatesan
+inconsistencybetweentrain/test-timeinference.For these
+
+reasons,FastandFasterR-CNN[
+11
+,
+29
+] opt tonot usefea-
+turizedimagepyramidsunderdefaultsettings.
+However,imagepyramidsarenottheonlywaytocom-
+puteamulti-scalefeaturerepresentation.AdeepConvNet
+
+computesa
+featurehierarchy
+layerby layer,andwithsub-
+samplinglayersthefeaturehierarchyhasan inherentmulti-
+
+scale,pyramidalshape.Thisin-networkfeaturehierarchy
+
+producesfeaturemapsof differentspatialresolutions,but
+
+introduceslargesemanticgapscausedbydifferentdepths.
+
+Thehigh-resolutionmapshavelow-levelfeaturesthatharm
+
+theirrepresentationalcapacityforobjectrecognition.
+TheSingleShotDetector(SSD) [
+22
+]isoneoftherst
+attemptsatusingaConvNet'spyramidalfeaturehierarchy
+
+asifitwereafeaturizedimagepyramid(Fig.
+1
+(c)). Ideally,
+theSSD-stylepyramidwouldreusethemulti-scalefeature
+
+mapsfromdifferentlayerscomputedintheforwardpass
+
+andthuscomefreeofcost.Buttoavoid usinglow-level
+
+featuresSSDforegoesreusingalready computedlayersand
+
+insteadbuildsthepyramidstartingfromhighupinthenet-
+
+work(
+e.g
+.,conv4
+3ofVGGnets[
+36
+])andthenbyadding
+severalnewlayers.Thusitmissestheopportunityto reuse
+
+thehigher-resolutionmapsofthefeaturehierarchy.We
+
+showthattheseareimportantfordetectingsmallobjects.
+Thegoalofthispaperistonaturallyleveragethe pyra-
+midalshapeofaConvNet'sfeaturehierarchywhilecre-
+
+atingafeaturepyramidthathasstrongsemanticsatall
+
+scales.Toachieve thisgoal,werelyonanarchitecturethat
+
+combineslow-resolution,semanticallystrongfeatureswith
+
+high-resolution,semanticallyweakfeaturesviaatop-down
+
+pathway andlateralconnections(Fig.
+1
+(d)).Theresultis
+afeaturepyramid thathasrichsemanticsatalllevelsand
+
+isbuiltquicklyfromasingleinputimagescale.Inother
+
+words,weshowhowtocreatein-networkfeaturepyramids
+
+thatcanbeusedtoreplacefeaturizedimagepyramidswith-
+
+outsacricingrepresentationalpower,speed,ormemory.
+Similararchitecturesadopting top-downandskipcon-
+nectionsarepopularinrecentresearch[
+28
+,
+17
+,
+8
+,
+26
+].Their
+goalsaretoproduceasinglehigh-levelfeaturemapofane
+
+resolutiononwhichthepredictionsare tobemade(Fig.
+2
+top).Onthecontrary,ourmethodleveragesthearchitecture
+
+asafeaturepyramidwherepredictions(
+e.g
+.,objectdetec-
+tions)areindependentlymadeoneachlevel(Fig.
+2
+bottom).
+Ourmodelechoes afeaturizedimagepyramid,whichhas
+
+notbeenexploredintheseworks.
+Weevaluateourmethod,calledaFeaturePyramidNet-
+work(FPN), invarioussystemsfordetectionandsegmen-
+
+tation[
+11
+,
+29
+,
+27
+].Withoutbells andwhistles,were-
+portastate-of-the-artsingle-modelresultonthechallenging
+
+COCOdetectionbenchmark[
+21
+]simplybasedonFPNand
+predict
+predict
+predict
+predict
+Figure2.Top:atop-downarchitecturewithskipconnections,
+
+wherepredictionsaremadeonthenestlevel(
+e.g
+.,[
+28
+]).Bottom:
+ourmodelthathasasimilarstructurebutleveragesitasa
+feature
+pyramid
+, withpredictions madeindependentlyatalllevels.
+abasicFasterR-CNNdetector[
+29
+],surpassingallexist-
+ingheavily-engineeredsingle-modelentriesofcompetition
+
+winners.Inablationexperiments,wendthatforbound-
+
+ingbox proposals,FPNsignicantlyincreasestheAverage
+
+Recall (AR)by8.0points;forobject detection,it improves
+
+theCOCO-styleAveragePrecision(AP) by2.3pointsand
+
+PASCAL-styleAPby3.8points,overa strongsingle-scale
+
+baselineofFasterR-CNNonResNets[
+16
+].Ourmethodis
+alsoeasilyextendedtomaskproposalsandimprovesboth
+
+instancesegmentationARandspeedoverstate-of-the-art
+
+methods thatheavilydependonimagepyramids.
+Inaddition,ourpyramidstructurecanbetrainedend-to-
+endwithallscalesandisusedconsistentlyattrain/testtime,
+
+whichwouldbememory-infeasibleusingimagepyramids.
+
+Asaresult,FPNsareabletoachievehigheraccuracythan
+
+allexistingstate-of-the-artmethods.Moreover,thisim-
+
+provementisachievedwithoutincreasingtestingtimeover
+
+thesingle-scalebaseline.Webelievetheseadvanceswill
+
+facilitatefutureresearchandapplications.Ourcodewillbe
+
+madepublicly available.
+
+2.RelatedWork
+
+Hand-engineeredfeaturesandearlyneuralnetworks.
+
+SIFT features[
+25
+]were originallyextractedatscale-space
+extrema andused forfeaturepointmatching.HOGfea-
+
+tures[
+5
+],andlaterSIFTfeaturesaswell, werecomputed
+denselyoverentireimagepyramids.TheseHOGandSIFT
+
+pyramidshavebeen usedinnumerousworksforimage
+
+classication,objectdetection,humanposeestimation,and
+
+more.Therehasalsobeensignicantinterestincomput-
+
+ingfeaturizedimagepyramids quickly.Doll
+´
+ar
+etal
+.[
+6
+]
+demonstratedfast pyramidcomputation byrstcomputing
+
+asparselysampled(inscale)pyramidand theninterpolat-
+
+ingmissinglevels.BeforeHOGandSIFT, earlywork on
+
+facedetectionwithConvNets[
+38
+,
+32
+] computedshallow
+networksoverimagepyramidstodetectfacesacrossscales.
+2118
+
+DeepConvNet objectdetectors.
+Withthedevelopment
+ofmoderndeepConvNets[
+19
+],objectdetectorslikeOver-
+Feat[
+34
+]andR-CNN[
+12
+]showeddramatic improvements
+inaccuracy.OverFeatadoptedastrategysimilartoearly
+
+neuralnetworkfacedetectorsbyapplyingaConvNetas
+
+aslidingwindowdetectoronanimagepyramid.R-CNN
+
+adoptedaregionproposal-basedstrategy[
+37
+]inwhicheach
+proposalwas scale-normalizedbeforeclassifyingwitha
+
+ConvNet.SPPnet[
+15
+]demonstratedthatsuchregion-based
+detectorscouldbeappliedmuchmoreefcientlyonfea-
+
+turemapsextractedonasingleimagescale.Recentand
+
+moreaccuratedetectionmethodslikeFastR-CNN[
+11
+]and
+FasterR-CNN[
+29
+]advocateusingfeatures computedfrom
+asinglescale,becauseitoffersagoodtrade-offbetween
+
+accuracyandspeed.Multi-scaledetection,however,still
+
+performsbetter,especiallyforsmallobjects.
+
+Methodsusingmultiplelayers.
+Anumberofrecentap-
+proachesimprovedetectionandsegmentationbyusingdif-
+
+ferentlayersinaConvNet.FCN[
+24
+]sumspartialscores
+foreachcategoryovermultiplescalestocomputesemantic
+
+segmentations.Hypercolumns [
+13
+]usesasimilarmethod
+forobjectinstancesegmentation.Severalotherapproaches
+
+(HyperNet[
+18
+],ParseNet[
+23
+],andION[
+2
+])concatenate
+featuresofmultiplelayersbeforecomputingpredictions,
+
+which isequivalenttosummingtransformedfeatures.SSD
+
+[22
+]andMS-CNN[
+3
+]predictobjectsatmultiplelayersof
+thefeaturehierarchywithoutcombiningfeatures orscores.
+Therearerecentmethodsexploitinglateral/skipconnec-
+tionsthatassociatelow-levelfeature mapsacrossresolu-
+
+tionsandsemanticlevels,includingU-Net[
+31
+]andSharp-
+Mask[
+28
+]forsegmentation,Recombinatornetworks[
+17
+]
+forface detection,andStackedHourglassnetworks[
+26
+]
+forkeypointestimation.Ghiasi
+etal
+.[
+8
+]presentaLapla-
+cianpyramidpresentationforFCNstoprogressivelyrene
+
+segmentation.Althoughthesemethodsadoptarchitectures
+
+withpyramidalshapes,they areunlikefeaturizedimage
+
+pyramids[
+5
+,
+7
+,
+34
+]wherepredictionsaremadeindepen-
+dentlyatalllevels,see Fig.
+2
+.Infact,for thepyramidal
+architectureinFig.
+2
+(top),imagepyramidsarestillneeded
+torecognizeobjectsacrossmultiplescales[
+28
+].
+3.FeaturePyramidNetworks
+OurgoalistoleverageaConvNet'spyramidalfeature
+hierarchy,whichhassemanticsfromlowtohighlevels,and
+
+buildafeaturepyramidwithhigh-levelsemanticsthrough-
+
+out.Theresulting
+FeaturePyramidNetwork
+isgeneral-
+purposeandin thispaperwefocusonslidingwindowpro-
+
+posers (RegionProposalNetwork,RPNforshort)[
+29
+]and
+region-baseddetectors(FastR-CNN)[
+11
+].Wealsogener-
+alizeFPNs toinstancesegmentationproposalsinSec.
+6
+.
+Ourmethodtakesa single-scaleimage ofanarbitrary
+sizeasinput,andoutputsproportionallysizedfeaturemaps
+2x up
+1x1 conv
++
+predict
+predict
+predict
+Figure3.Abuilding blockillustratingthelateralconnectionand
+
+thetop-downpathway, merged byaddition.
+
+atmultiplelevels,inafullyconvolutional fashion.Thispro-
+
+cessisindependentofthebackboneconvolutionalarchitec-
+
+tures(
+e.g
+.,[
+19
+,
+36
+,
+16
+]),andinthispaperwepresentresults
+usingResNets[
+16
+].Theconstructionofourpyramidin-
+volvesabottom-uppathway,atop-down pathway,andlat-
+
+eralconnections,asintroducedinthefollowing.
+
+Bottom-up pathway.
+The bottom-uppathwayisthefeed-
+forwardcomputationofthebackboneConvNet,whichcom-
+
+putesafeaturehierarchyconsistingoffeaturemapsatsev-
+
+eralscaleswithascalingstepof2.Thereareoftenmany
+
+layersproducingoutputmapsofthe samesizeandwesay
+
+theselayersarein thesamenetwork
+stage
+.Forourfeature
+pyramid,wedeneonepyramidlevelforeachstage.We
+
+choosetheoutputofthelastlayerofeachstageasourref-
+
+erence setoffeaturemaps,whichwewillenrichtocreate
+
+ourpyramid.Thischoiceisnaturalsincethedeepestlayer
+
+ofeachstageshouldhavethestrongestfeatures.
+Specically,forResNets[
+16
+]weusethefeatureactiva-
+tionsoutputbyeachstage'slastresidualblock.Wedenote
+
+theoutputoftheselastresidualblocksas
+f
+C
+2
+;C
+3
+;C
+4
+;C
+5
+g
+forconv2,conv3,conv4,andconv5outputs,andnotethat
+
+theyhavestridesof
+f
+4,8,16,32
+g
+pixelswithrespecttothe
+inputimage.Wedonotincludeconv1intothepyramiddue
+
+toitslargememoryfootprint.
+
+Top-downpathwayandlateralconnections.
+Thetop-
+downpathwayhallucinateshigherresolutionfeaturesby
+
+upsamplingspatiallycoarser, butsemanticallystronger, fea-
+
+turemapsfromhigherpyramidlevels.Thesefeaturesare
+
+thenenhancedwithfeaturesfromthebottom-uppathway
+
+vialateralconnections.Eachlateralconnectionmergesfea-
+
+turemaps ofthesamespatialsizefromthebottom-uppath-
+
+wayandthetop-downpathway.Thebottom-upfeaturemap
+
+isoflower-levelsemantics,butitsactivationsaremoreac-
+
+curatelylocalizedasitwassubsampledfewertimes.
+Fig.
+3
+shows thebuildingblockthatconstructsourtop-
+downfeature maps.Withacoarser-resolutionfeaturemap,
+
+weupsamplethespatial resolutionbyafactorof2 (using
+
+nearestneighborupsamplingforsimplicity).Theupsam-
+2119
+
+pledmapisthenmergedwiththecorrespondingbottom-up
+
+map(whichundergoesa1
+
+1convolutionallayertoreduce
+channeldimensions)byelement-wiseaddition.Thispro-
+
+cessisiterated untilthenestresolutionmapisgenerated.
+
+Tostarttheiteration,we simplyattacha1
+
+1convolutional
+layeron
+C
+5
+toproducethecoarsestresolutionmap.Fi-
+nally, weappenda
+3
+
+3
+convolutiononeachmerged mapto
+generatethenalfeaturemap,which istoreducethealias-
+
+ingeffectofupsampling.Thisnalsetoffeaturemapsis
+
+calledf
+P
+2
+;P
+3
+;P
+4
+;P
+5
+g
+,correspondingto
+f
+C
+2
+;C
+3
+;C
+4
+;C
+5
+g
+thatarerespectivelyofthesamespatialsizes.
+Becausealllevelsofthepyramidusesharedclassi-
+ers/regressorsasinatraditionalfeaturizedimagepyramid,
+
+wexthefeaturedimension(numbersofchannels,denoted
+
+asd
+)inallthefeaturemaps. Weset
+d
+=256
+inthispa-
+perandthus allextraconvolutionallayershave256-channel
+
+outputs.Therearenonon-linearitiesintheseextralayers,
+
+whichwehaveempiricallyfoundtohaveminorimpacts.
+Simplicityiscentraltoour designandwehavefoundthat
+ourmodelisrobusttomanydesignchoices.Wehaveexper-
+
+imentedwithmoresophisticatedblocks(
+e.g
+.,usingmulti-
+layerresidualblocks[
+16
+]astheconnections)andobserved
+marginallybetterresults.Designingbetterconnectionmod-
+
+ulesisnotthefocusofthispaper,soweoptforthesimple
+
+designdescribedabove.
+
+4.Applications
+Ourmethodisagenericsolutionforbuildingfeature
+pyramidsinsidedeepConvNets.Inthefollowingweadopt
+
+ourmethodinRPN[
+29
+]forboundingboxproposalgen-
+erationandinFastR-CNN[
+11
+] forobjectdetection.To
+demonstratethesimplicityandeffectivenessofourmethod,
+
+wemakeminimal modicationstotheoriginalsystemsof
+
+[29
+,
+11
+] whenadaptingthemtoourfeaturepyramid.
+4.1.Feature PyramidNetworksforRPN
+RPN[
+29
+]isasliding-windowclass-agnosticobjectde-
+tector.In theoriginalRPNdesign,asmallsubnetworkis
+
+evaluatedondense3
+
+3slidingwindows,ontopofasingle-
+scaleconvolutionalfeaturemap,performingobject/non-
+
+objectbinaryclassicationandboundingboxregression.
+
+Thisisrealizedbya3
+
+3convolutional layerfollowedby
+twosibling1
+
+1convolutionsforclassication andregres-
+sion,which werefertoasanetwork
+head
+.Theobject/non-
+objectcriterionandboundingboxregressiontargetarede-
+
+nedwithrespecttoasetof referenceboxescalled
+anchors
+[
+29
+].Theanchorsareofmultiplepre-dened scalesand
+aspectratiosinordertocoverobjectsofdifferent shapes.
+WeadaptRPNbyreplacingthesingle-scalefeaturemap
+withourFPN.Weattachaheadofthesamedesign(3
+
+3
+convandtwosibling1
+
+1convs) toeachlevelonourfeature
+pyramid.Becausetheheadslidesdenselyoveralllocations
+
+inallpyramidlevels,it isnotnecessarytohavemulti-scale
+anchorsonaspeciclevel.Instead,weassignanchorsof
+
+asinglescaletoeachlevel.Formally,wedenethean-
+
+chorstohaveareasof
+f
+32
+2
+;
+64
+2
+;
+128
+2
+;
+256
+2
+;
+512
+2
+g
+pixels
+on
+f
+P
+2
+;P
+3
+;P
+4
+;P
+5
+;P
+6
+g
+respectively.
+1
+Asin[
+29
+]we also
+useanchorsofmultipleaspectratios
+f
+1
+:
+2
+;
+1
+:
+1
+,
+2
+:
+1
+g
+ateach
+level.Sointotalthereare15anchorsoverthepyramid.
+Weassigntraininglabelstotheanchorsbasedon
+theirIntersection-over-Union(IoU)ratioswithground-truth
+
+boundingboxesasin[
+29
+].Formally,ananchoris assigned
+apositivelabelifithasthehighestIoUforagivenground-
+
+truthboxoranIoUover0.7withanyground-truthbox,
+
+andanegativelabelifithasIoUlowerthan0.3forall
+
+ground-truthboxes.Notethatscalesofground-truthboxes
+
+arenotexplicitlyusedtoassignthemtothelevelsofthe
+
+pyramid;instead,ground-truthboxesareassociated with
+
+anchors,whichhavebeenassignedtopyramidlevels.As
+
+such,weintroducenoextrarulesinadditiontothosein[
+29
+].
+Wenotethattheparametersof theheadsareshared
+acrossallfeaturepyramidlevels;wehavealsoevaluatedthe
+
+alternativewithoutsharingparametersandobservedsimilar
+
+accuracy.Thegoodperformanceofsharingparametersin-
+
+dicatesthatalllevelsofourpyramidsharesimilarsemantic
+
+levels. Thisadvantageisanalogoustothatofusingafea-
+
+turizedimagepyramid,whereacommonheadclassiercan
+
+beappliedtofeatures computedatanyimagescale.
+Withtheaboveadaptations,RPNcanbenaturallytrained
+andtestedwithourFPN,inthesamefashionasin[
+29
+].We
+elaborateontheimplementationdetailsintheexperiments.
+
+4.2.Feature PyramidNetworksforFast
+FastR-CNN[
+11
+]isaregion-basedobjectdetectorin
+whichRegion-of-Interest(RoI)poolingisusedtoextract
+
+features.FastR-CNNismostcommonlyperformedona
+
+single-scalefeaturemap.TouseitwithourFPN,weneed
+
+toassignRoIsofdifferentscalestothepyramidlevels.
+Weview ourfeaturepyramidasifitwereproducedfrom
+animagepyramid.Thuswecanadapttheassignmentstrat-
+
+egyof region-baseddetectors[
+15
+,
+11
+]inthecasewhenthey
+arerunonimagepyramids. Formally,weassignanRoIof
+
+widthw
+andheight
+h
+(ontheinputimagetothenetwork)to
+thelevel
+P
+k
+ofourfeaturepyramidby:
+k
+=
+b
+k
+0
++log
+2
+(
+p
+wh=
+224)
+c
+:
+(1)
+Here224isthecanonicalImageNetpre-trainingsize,and
+
+k
+0
+isthetargetlevelon whichanRoIwith
+w
+
+h
+=224
+2
+shouldbemappedinto.Analogoustothe ResNet-based
+
+FasterR-CNNsystem[
+16
+]thatuses
+C
+4
+asthesingle-scale
+featuremap,weset
+k
+0
+to4.Intuitively,Eqn.(
+1
+)means
+thatiftheRoI'sscalebecomessmaller(say,1/2of224),it
+
+shouldbemappedintoaner-resolutionlevel(say,
+k
+=3
+).
+1
+Hereweintroduce
+P
+6
+onlyforcoveringalargeranchorscaleof
+512
+2
+.
+P
+6
+issimplyastridetwosubsamplingof
+P
+5
+.
+P
+6
+isnotusedbytheFast
+R-CNN detectorinthenextsection.
+2120
+
+We attachpredictorheads(inFastR-CNNtheheadsare
+class-specicclassiersandbounding boxregressors)toall
+
+RoIsofalllevels.Again,theheadsallshare parameters,
+
+regardlessoftheirlevels.In[
+16
+],aResNet'sconv5lay-
+ers(a9-layerdeepsubnetwork)areadoptedastheheadon
+
+topofthe conv4features,butour methodhas alreadyhar-
+
+nessedconv5toconstructthefeaturepyramid.Sounlike
+
+[16
+],wesimplyadoptRoIpoolingtoextract7
+
+7features,
+andattachtwohidden1,024-dfully-connected(
+fc
+)layers
+(eachfollowedbyReLU)beforethenalclassicationand
+
+boundingboxregressionlayers.Theselayersarerandomly
+
+initialized,astherearenopre-trained
+fc
+layersavailablein
+ResNets.Notethatcomparedtothestandardconv5head,
+
+our2-
+fc
+MLPheadislighterweightandfaster.
+Basedontheseadaptations,wecantrainandtestFastR-
+CNN ontopofthefeaturepyramid.Implementationdetails
+
+aregivenintheexperimentalsection.
+
+5.ExperimentsonObjectDetection
+Weperform experimentsonthe80categoryCOCOde-
+tectiondataset[
+21
+].Wetrainusingtheunionof80ktrain
+imagesanda35ksubsetofvalimages(
+trainval35k
+[
+2
+]),andreportablationsona5ksubsetofvalimages
+(
+minival
+).Wealsoreportnalresultsonthestandard
+testset(
+test-std
+)[
+21
+]whichhasnodisclosedlabels.
+Asiscommonpractice[
+12
+],allnetworkbackbones
+arepre-trainedonthe ImageNet1kclassicationset[
+33
+]
+andthenne-tunedonthedetectiondataset.Weusethe
+
+pre-trainedResNet-50andResNet-101modelsthatare
+
+publiclyavailable.
+2
+Ourcodeisareimplementation of
+py-faster-rcnn
+3
+usingCaffe2.
+4
+5.1.RegionProposalwithRPN
+WeevaluatetheCOCO-styleAverageRecall(AR)and
+ARonsmall,medium,and largeobjects(AR
+s
+,AR
+m
+,and
+AR
+l
+)followingthedenitions in[
+21
+].Wereportresultsfor
+100and1000proposalsper images(AR
+100
+andAR
+1
+k
+).
+Implementationdetails.
+Allarchitectures inTable
+1
+are
+trainedend-to-end.Theinputimageisresizedsuchthatits
+
+shortersidehas800pixels.WeadoptsynchronizedSGD
+
+trainingon8GPUs.Amini-batchinvolves2imagesper
+
+GPUand256anchorsperimage.Weuseaweightdecayof
+
+0.0001and amomentumof0.9.Thelearningrateis0.02for
+
+therst30kmini-batchesand0.002forthenext10k.For
+
+allRPNexperiments(includingbaselines),weincludethe
+
+anchorboxesthatareoutsidetheimage fortraining, which
+
+isunlike[
+29
+]wheretheseanchorboxesareignored.Other
+implementationdetailsareasin[
+29
+].Training RPNwith
+FPNon8GPUstakesabout8hoursonCOCO.
+2
+https://github.com/kaiminghe/deep-residual-networks
+3
+https://github.com/rbgirshick/py-faster-rcnn
+4
+https://github.com/caffe2/caffe2
+5.1.1AblationExperiments
+
+Comparisonswithbaselines.
+Forfaircomparisonswith
+originalRPNs[
+29
+], weruntwobaselines(Table
+1
+(a,b))us-
+ingthe single-scalemapof
+C
+4
+(thesameas[
+16
+])or
+C
+5
+,both
+usingthesamehyper-parametersasours,includingusing5
+
+scaleanchorsof
+f
+32
+2
+;
+64
+2
+;
+128
+2
+;
+256
+2
+;
+512
+2
+g
+.Table
+1
+(b)
+showsnoadvantage over(a),indicatingthatasingle higher-
+
+levelfeaturemapisnotenoughbecausethereis a trade-off
+
+betweencoarserresolutionsandstrongersemantics.
+PlacingFPNinRPNimprovesAR
+1
+k
+to56.3(Table
+1
+(c)),whichis
+8.0
+pointsincreaseoverthesingle-scaleRPN
+baseline(Table
+1
+(a)).Inaddition,theperformanceonsmall
+objects(AR
+1
+k
+s
+)isboostedbya largemarginof12.9points.
+OurpyramidrepresentationgreatlyimprovesRPN'srobust-
+
+nesstoobjectscalevariation.
+
+Howimportant istop-downenrichment?
+Table
+1
+(d)
+showstheresultsofourfeaturepyramidwithoutthetop-
+
+downpathway.With thismodication,the1
+
+1lateralcon-
+nectionsfollowedby3
+
+3convolutionsareattachedtothe
+bottom-uppyramid.Thisarchitecturesimulatestheeffect
+
+ofreusingthepyramidalfeaturehierarchy(Fig.
+1
+(b)).
+TheresultsinTable
+1
+(d) arejustonparwiththeRPN
+baselineandlagfarbehindours.Weconjecturethatthis
+
+isbecausetherearelargesemanticgapsbetween different
+
+levelsonthebottom-uppyramid(Fig.
+1
+(b)),especiallyfor
+very deepResNets.WehavealsoevaluatedavariantofTa-
+
+ble1
+(d)withoutsharingtheparametersoftheheads,but
+observedsimilarly degradedperformance.Thisissuecan-
+
+notbesimplyremediedbylevel-specicheads.
+
+Howimportantarelateralconnections?
+Table
+1
+(e)
+showstheablationresultsofatop-downfeaturepyramid
+
+withoutthe1
+
+1 lateralconnections.Thistop-downpyra-
+midhasstrongsemanticfeaturesandneresolutions.But
+
+wearguethatthelocationsof thesefeatures arenotprecise,
+
+becausethesemapshavebeendownsampledandupsampled
+
+severaltimes.Morepreciselocationsoffeaturescan bedi-
+
+rectly passedfromthe nerlevelsofthebottom-upmapsvia
+
+thelateralconnectionstothetop-downmaps.Asaresults,
+
+FPNhasanAR
+1
+k
+score10pointshigherthanTable
+1
+(e).
+Howimportantarepyramidrepresentations?
+Instead
+ofresortingtopyramidrepresentations,onecanattachthe
+
+headtothehighest-resolution,stronglysemanticfeature
+
+mapsof
+P
+2
+(
+i.e
+.,thenestlevelinourpyramids). Simi-
+lartothesingle-scalebaselines,weassignallanchorstothe
+
+P2
+featuremap.Thisvariant (Table
+1
+(f))isbetter thanthe
+baselinebutinferiortoourapproach.RPNisaslidingwin-
+
+dowdetectorwithaxedwindowsize,soscanningover
+
+pyramidlevelscanincreaseits robustnesstoscalevariance.
+In addition,wenotethatusing
+P
+2
+aloneleadstomore
+anchors(750k,Table
+1
+(f))causedbyitslargespatialreso-
+lution.Thisresultsuggests thata larger numberofanchors
+
+isnotsufcientinitselftoimproveaccuracy.
+2121
+
+RPN
+feature
+#anchors
+lateral?top-down?
+AR
+100
+AR
+1
+k
+AR
+1
+k
+s
+AR
+1
+k
+m
+AR
+1
+k
+l
+(a)baseline onconv4
+C
+4
+47k
+36.1
+48.3
+32.058.762.2
+(b)baseline onconv5
+C
+5
+12k
+36.3
+44.9
+25.355.564.2
+(c)
+FPN
+f
+P
+k
+g
+200k
+XX
+44.0
+56.3
+44.963.4
+66.2
+Ablationexperimentsfollow:
+(d)bottom-uppyramid
+f
+P
+k
+g
+200k
+X
+37.4
+49.5
+30.559.9
+68.0
+(e)top-downpyramid,w/olateral
+f
+P
+k
+g
+200k
+X
+34.5
+46.1
+26.557.464.7
+(f)onlynestlevel
+P
+2
+750k
+XX
+38.4
+51.3
+35.159.767.6
+Table1.Boundingboxproposalresults usingRPN[
+29
+], evaluatedontheCOCO
+minival
+set.Allmodelsaretrainedon
+trainval35k
+.
+Thecolumnsﬁlateralﬂ andﬁtop-downﬂdenotethepresenceoflateralandtop-downconnections,respectively. Thecolumnﬁfeatureﬂdenotes
+
+thefeaturemapsonwhichtheheadsareattached.AllresultsarebasedonResNet-50andsharethesame hyper-parameters.
+FastR-CNN
+proposals
+feature
+head
+lateral?top-down?
+AP@0.5
+AP
+AP
+s
+AP
+m
+AP
+l
+(a)baseline onconv4
+RPN,
+f
+P
+k
+g
+C
+4
+conv5
+54.7
+31.9
+15.736.545.5
+(b)baseline onconv5
+RPN,
+f
+P
+k
+g
+C
+5
+2
+fc
+52.9
+28.8
+11.932.443.4
+(c)
+FPN
+RPN,
+f
+P
+k
+g
+f
+P
+k
+g
+2
+fc
+XX
+56.9
+33.9
+17.837.745.8
+Ablationexperimentsfollow:
+(d)bottom-uppyramid
+RPN,
+f
+P
+k
+g
+f
+P
+k
+g
+2
+fc
+X
+44.9
+24.9
+10.924.438.5
+(e)top-downpyramid,w/olateral
+RPN,
+f
+P
+k
+g
+f
+P
+k
+g
+2
+fc
+X
+54.0
+31.3
+13.335.245.3
+(f)onlynestlevel
+RPN,
+f
+P
+k
+g
+P
+2
+2
+fc
+XX
+56.3
+33.4
+17.337.345.6
+Table2.Objectdetectionresults using
+FastR-CNN
+[
+11
+]on
+axedset ofproposals
+(RPN,
+f
+P
+k
+g
+,Table
+1
+(c)),evaluatedontheCOCO
+minival
+set.Modelsaretrainedonthe
+trainval35k
+set.AllresultsarebasedonResNet-50and sharethesame hyper-parameters.
+FasterR-CNN
+proposals
+feature
+head
+lateral?top-down?
+AP@0.5
+AP
+AP
+s
+AP
+m
+AP
+l
+(*)baseline fromHe
+etal
+.[
+16
+]
+y
+RPN,
+C
+4
+C
+4
+conv5
+47.3
+26.3
+---
+(a)baseline onconv4
+RPN,
+C
+4
+C
+4
+conv5
+53.1
+31.6
+13.235.6
+47.1
+(b)baseline onconv5
+RPN,
+C
+5
+C
+5
+2
+fc
+51.7
+28.0
+9.631.943.1
+(c)
+FPN
+RPN,
+f
+P
+k
+g
+f
+P
+k
+g
+2
+fc
+XX
+56.9
+33.9
+17.837.7
+45.8
+Table3.Objectdetectionresultsusing
+FasterR-CNN
+[
+29
+]evaluatedontheCOCO
+minival
+set.
+ThebackbonenetworkforRPNare
+consistentwithFastR-CNN.
+Modelsaretrainedonthe
+trainval35k
+setanduseResNet-50.
+y
+Providedbyauthors of[
+16
+].
+5.2.ObjectDetectionwithFast/Faster
+NextweinvestigateFPNforregion-based(non-sliding
+window)detectors. Weevaluateobjectdetectionbythe
+
+COCO-styleAveragePrecision(AP)andPASCAL-style
+
+AP(atasingleIoUthresholdof 0.5).WealsoreportCOCO
+
+APonobjectsofsmall,medium,andlargesizes(namely,
+
+APs
+,AP
+m
+,andAP
+l
+)followingthedenitionsin[
+21
+].
+Implementationdetails.
+Theinputimageisresizedsuch
+thatitsshortersidehas800pixels.SynchronizedSGDis
+
+usedtotrainthemodelon8GPUs.Eachmini-batch in-
+
+volves2imageperGPUand512RoIsperimage.Weuse
+
+aweightdecayof0.0001andamomentumof0.9.The
+
+learningrateis0.02fortherst60kmini-batchesand0.002
+
+forthenext20k.Weuse2000RoIsperimagefortraining
+
+and1000fortesting.TrainingFastR-CNNwithFPNtakes
+
+about10hoursontheCOCOdataset.
+
+5.2.1FastR-CNN(onxedproposals)
+
+TobetterinvestigateFPN'seffectson theregion-basedde-
+
+tectoralone,weconductablationsofFastR-CNNon
+axed
+setofproposals
+.Wechoosetofreezetheproposalsascom-
+putedbyRPNonFPN(Table
+1
+(c)),becauseithasgoodper-
+formanceonsmallobjectsthatare to berecognizedby the
+
+detector.Forsimplicitywedonotsharefeaturesbetween
+
+FastR-CNNandRPN,exceptwhenspecied.
+AsaResNet-basedFastR-CNN baseline,following
+[
+16
+],weadoptRoIpoolingwithanoutputsizeof14
+
+14
+andattachallconv5layersasthehiddenlayersofthehead.
+
+Thisgivesan APof31.9inTable
+2
+(a).Table
+2
+(b) isabase-
+lineexploitinganMLPheadwith2hidden
+fc
+layers,similar
+totheheadinourarchitecture.ItgetsanAPof28.8,indi-
+
+catingthatthe2-
+fc
+headdoesnotgiveusanyorthogonal
+advantageoverthebaselineinTable
+2
+(a).
+Table
+2
+(c)showstheresultsofourFPNinFastR-CNN.
+ComparingwiththebaselineinTable
+2
+(a),ourmethodim-
+provesAPby2.0pointsandsmallobjectAPby2.1points.
+
+Comparing withthebaselinethatalsoadoptsa2
+fc
+head(Ta-
+ble
+2
+(b)),ourmethodimprovesAPby5.1points.
+5
+These
+comparisons indicatethatourfeaturepyramidissuperiorto
+
+single-scalefeatures for a
+region-based
+objectdetector.
+Table
+2
+(d)and(e)showthatremovingtop-downcon-
+5
+Weexpectastrongerarchitectureofthehead[
+30
+]willimproveupon
+ourresults,whichis beyondthefocusof thispaper.
+2122
+
+image
+test-dev
+test-std
+method
+backbone
+competition
+pyramid
+AP
+@
+:
+5
+AP
+AP
+s
+AP
+m
+AP
+l
+AP
+@
+:
+5
+AP
+AP
+s
+AP
+m
+AP
+l
+ours,FasterR-CNN on
+FPN
+ResNet-101
+-
+59.1
+36.2
+18.239.0
+48.2
+58.5
+35.8
+17.538.7
+47.8
+Competition-winning
+single-model
+resultsfollow:
+G-RMI
+y
+Inception-ResNet
+2016
+-
+34.7
+---
+-
+-
+---
+AttractioNet
+z
+[
+10
+]
+VGG16+WideResNet
+x
+2016
+X
+53.4
+35.7
+15.638.0
+52.7
+52.9
+35.3
+14.737.6
+51.9
+FasterR-CNN +++[
+16
+]
+ResNet-101
+2015
+X
+55.7
+34.9
+15.638.750.9
+-
+-
+---
+Multipath[
+40
+]
+(on
+minival
+)
+VGG-16
+2015
+49.6
+31.5
+---
+-
+-
+---
+ION
+z
+[
+2
+]
+VGG-16
+2015
+53.4
+31.2
+12.832.945.2
+52.9
+30.7
+11.832.844.8
+Table4.Comparisonsof
+single-model
+resultson theCOCOdetectionbenchmark.Someresultswerenotavailableonthe
+test-std
+set,sowealsoincludethe
+test-dev
+results(andforMultipath[
+40
+]on
+minival
+).
+y
+:
+http://image-net.org/challenges/
+talks/2016/GRMI-COCO-slidedeck.pdf
+.
+z
+:
+http://mscoco.org/dataset/#detections-leaderboard
+.
+x
+:This
+entryofAttractioNet[
+10
+]adoptsVGG-16forproposalsandWideResNet[
+39
+]forobjectdetection,soisnotstrictlyasingle-modelresult.
+nectionsorremovinglateralconnectionsleadstoinferior
+
+results,similartowhatwehave observedintheabove sub-
+
+sectionforRPN.It isnoteworthythatremovingtop-down
+
+connections(Table
+2
+(d))signicantlydegradestheaccu-
+racy,suggestingthatFastR-CNNsuffersfromusingthe
+
+low-levelfeaturesatthehigh-resolutionmaps.
+InTable
+2
+(f),weadoptFastR-CNNonthesinglenest
+scalefeaturemapof
+P
+2
+. Its result(33.4AP)ismarginally
+worsethanthatofusingallpyramidlevels(33.9AP,Ta-
+
+ble2
+(c)).WearguethatthisisbecauseRoIpoolingisa
+warping-likeoperation,whichislesssensitivetothe re-
+
+gion'sscales. Despitethegoodaccuracyofthisvariant,itis
+
+basedontheRPNproposalsof
+f
+P
+k
+g
+andhas thusalready
+benetedfromthepyramidrepresentation.
+
+5.2.2FasterR-CNN(onconsistentproposals)
+
+Intheaboveweused axedsetofproposals to investi-
+
+gatethedetectors.ButinaFasterR-CNNsystem[
+29
+],the
+RPNandFastR-CNNmustuse
+thesamenetworkback-
+bone
+inordertomakefeaturesharingpossible.Table
+3
+showsthecomparisonsbetweenourmethodandtwobase-
+
+lines,allusing
+consistent
+backbonearchitecturesforRPN
+andFastR-CNN. Table
+3
+(a)showsourreproductionofthe
+baselineFasterR-CNNsystemasdescribedin[
+16
+].Under
+controlled settings,ourFPN(Table
+3
+(c))isbetterthanthis
+strongbaselineby
+2.3
+pointsAPand
+3.8
+pointsAP@0.5.
+NotethatTable
+3
+(a)and(b)arebaselinesthataremuch
+strongerthanthebaselineprovidedbyHe
+etal
+.[
+16
+]inTa-
+ble
+3
+(*).We ndthefollowingimplementationscontribute
+tothegap:(i)Weuseanimagescaleof800pixelsinsteadof
+
+600in[
+11
+,
+16
+];(ii)Wetrainwith512RoIsperimagewhich
+accelerateconvergence,incontrastto64RoIsin[
+11
+,
+16
+];
+(iii)Weuse5scaleanchorsinsteadof4in[
+16
+](adding
+32
+2
+);(iv)Attest timeweuse1000proposalsperimage in-
+steadof300in[
+16
+].So comparingwithHe
+etal
+.'sResNet-
+50FasterR-CNNbaseline inTable
+3
+(*),ourmethodim-
+provesAPby7.6pointsandAP@0.5by9.6points.
+
+Sharingfeatures.
+Intheabove,forsimplicitywedo not
+sharethefeaturesbetweenRPNandFastR-CNN.InTa-
+ResNet-50
+ResNet-101
+sharefeatures?
+AP
+@0
+:
+5
+AP
+AP
+@0
+:
+5
+AP
+no
+56.9
+33.9
+58.0
+35.0
+yes
+57.2
+34.3
+58.2
+35.2
+Table5.MoreobjectdetectionresultsusingFasterR-CNNandour
+
+FPNs,evaluatedon
+minival
+.Sharingfeaturesincreasestrain
+timeby1.5
+
+(using4-steptraining[
+29
+]),butreduces testtime.
+ble
+5
+,weevaluatesharingfeaturesfollowingthe4-step
+trainingdescribedin[
+29
+].Similarto[
+29
+],wendthatshar-
+ingfeaturesimprovesaccuracybyasmallmargin.Feature
+
+sharingalsoreducesthetestingtime.
+
+Running time.
+Withfeature sharing,ourFPN-based
+FasterR-CNN systemhasinferencetimeof0.165seconds
+
+perimageonasingleNVIDIAM40GPUforResNet-50,
+
+and0.19seconds forResNet-101.
+6
+Asacomparison,the
+single-scale ResNet-50baselineinTable
+3
+(a)runsat0.32
+seconds.Ourmethodintroducessmallextracostbytheex-
+
+tralayersintheFPN,buthasalighterweighthead.Overall
+
+oursystemisfasterthantheResNet-basedFasterR-CNN
+
+counterpart.Webelievetheefciencyandsimplicityofour
+
+methodwillbenetfutureresearchandapplications.
+
+5.2.3ComparingwithCOCOCompetitionWinners
+
+WendthatourResNet-101modelinTable
+5
+isnotsuf-
+cientlytrainedwiththedefaultlearningrateschedule.So
+
+weincreasethenumberofmini-batchesby2
+
+ateach
+learningratewhentrainingtheFastR-CNNstep.Thisin-
+
+creasesAPon
+minival
+to35.6,withoutsharingfeatures.
+ThismodelistheonewesubmittedtotheCOCOdetection
+
+leaderboard,showninTable
+4
+.Wehavenotevaluatedits
+feature-sharingversionduetolimitedtime,whichshould
+
+beslightlybetterasimpliedbyTable
+5
+.
+Table
+4
+comparesourmethodwiththe
+single-model
+re-
+sultsoftheCOCOcompetitionwinners,includingthe2016
+
+winnerG-RMIandthe2015winnerFasterR-CNN+++.
+
+Withoutaddingbellsandwhistles
+,oursingle-modelentry
+hassurpassedthesestrong,heavilyengineeredcompetitors.
+6
+Theseruntimesareupdatedfromanearlierversionof thispaper.
+2123
+
+5x5
+5x5
+5x5
+160x160 [128x128]
+80x80 [64x64]
+320x320 [256x256]
+14x14
+14x14
+14x14
+Figure4.FPNforobjectsegmentproposals.Thefeature pyramid
+
+isconstructedwithidenticalstructureasforobjectdetection.We
+
+applya smallMLPon5
+
+5windowstogeneratedenseobjectseg-
+mentswithoutputdimensionof14
+
+14.Shown inorangearethe
+sizeoftheimageregionsthemaskcorrespondstoforeachpyra-
+
+midlevel(levels
+P
+3
+ 
+5
+areshownhere).Boththecorresponding
+imageregionsize(lightorange)andcanonicalobjectsize(dark
+
+orange)areshown.Halfoctavesarehandled byanMLP on7x7
+
+windows(
+7
+ˇ
+5
+p
+2
+),notshownhere.Detailsareintheappendix.
+Onthe
+test-dev
+set,ourmethodincreasesovertheex-
+istingbestresultsby
+0.5
+pointsofAP(36.2
+vs
+. 35.7)and
+3.4
+pointsof AP@0.5(59.1
+vs
+.55.7).Itisworthnotingthat
+ourmethoddoesnotrelyonimage pyramidsandonlyuses
+
+asingle inputimagescale,butstillhasoutstandingAPon
+
+small-scale objects.Thiscouldonlybeachievedbyhigh-
+
+resolutionimageinputswithpreviousmethods.
+Moreover,ourmethod does
+not
+exploitmanypopular
+improvements,suchasiterativeregression[
+9
+], hardnega-
+tivemining[
+35
+],contextmodeling[
+16
+],strongerdataaug-
+mentation[
+22
+],
+etc
+.These improvementsarecomplemen-
+tarytoFPNs andshouldboostaccuracyfurther.
+Recently,FPNhas enablednewtopresultsin
+all
+tracks
+oftheCOCOcompetition,includingdetection,instance
+
+segmentation,andkeypointestimation.See[
+14
+]fordetails.
+6.Extensions:SegmentationProposals
+Ourmethodisa genericpyramidrepresentationandcan
+beusedinapplicationsotherthanobjectdetection.Inthis
+
+sectionweuseFPNstogeneratesegmentationproposals,
+
+followingtheDeepMask/SharpMaskframework[
+27
+,
+28
+].
+DeepMask/SharpMaskweretrainedonimagecrops for
+predictinginstancesegmentsandobject/non-objectscores.
+
+Atinferencetime, thesemodelsarerunconvolutionallyto
+
+generatedenseproposalsinanimage.Togeneratesegments
+
+atmultiplescales,imagepyramidsarenecessary[
+27
+,
+28
+].
+ItiseasytoadaptFPNtogeneratemaskproposals.We
+use afullyconvolutionalsetupforbothtrainingandinfer-
+
+ence.Weconstructour featurepyramidasinSec.
+5.1
+and
+set
+d
+=128
+.Ontopofeachlevelofthefeaturepyramid,we
+applyasmall5
+
+5MLPtopredict14
+
+14masksandobject
+scoresinafullyconvolutionalfashion,seeFig.
+4
+.Addition-
+ally,motivated bytheuseof2 scalesperoctaveintheimage
+
+pyramidof[
+27
+,
+28
+],weuseasecondMLPofinputsize7
+
+7
+tohandlehalfoctaves.ThetwoMLPsplayasimilarroleas
+
+anchorsinRPN.Thearchitectureistrainedend-to-end;full
+
+implementationdetailsaregivenintheappendix.
+imagepyramid
+ARAR
+s
+AR
+m
+AR
+l
+time(s)
+DeepMask[
+27
+]
+X
+37.115.850.154.9
+0.49
+SharpMask[
+28
+]
+X
+39.817.453.159.1
+0.77
+InstanceFCN[
+4
+]
+X
+39.2ŒŒŒ
+1.50
+y
+FPNMaskResults:
+singleMLP[5
+
+5]
+43.432.549.253.7
+0.15
+singleMLP[7
+
+7]
+43.530.049.657.8
+0.19
+dualMLP[5
+
+5,7
+
+7]
+45.731.951.560.8
+0.24
++2xmaskresolution
+46.731.753.163.2
+0.25
++2xtrainschedule
+48.132.654.265.6
+0.25
+Table6.Instancesegmentationproposalsevaluatedontherst5k
+
+COCOval
+images. Allmodelsaretrainedonthe
+train
+set.
+DeepMask,SharpMask,andFPNuseResNet-50whileInstance-
+
+FCNusesVGG-16.DeepMaskandSharpMaskperformance
+
+iscomputedwithmodelsavailablefrom
+https://github.
+com/facebookresearch/deepmask
+(botharethe`zoom'
+variants).
+y
+RuntimesaremeasuredonanNVIDIAM40GPU,ex-
+cepttheInstanceFCNtimingwhich isbasedontheslowerK40.
+
+6.1.SegmentationProposalResults
+ResultsareshowninTable
+6
+.Wereport segmentARand
+segmentARonsmall,medium,andlargeobjects,always
+
+for1000proposals.OurbaselineFPNmodelwithasingle
+
+5
+5MLP achievesanARof43.4.Switching toaslightly
+larger7
+
+7MLPleavesaccuracylargelyunchanged.Using
+bothMLPstogetherincreasesaccuracyto45.7AR.Increas-
+
+ingmaskoutputsizefrom14
+
+14to28
+
+28increasesAR
+anotherpoint(largersizesbegintodegradeaccuracy).Fi-
+
+nally,doublingthetrainingiterationsincreasesARto48.1.
+WealsoreportcomparisonstoDeepMask[
+27
+],Sharp-
+Mask[
+28
+],andInstanceFCN[
+4
+],thepreviousstateofthe
+artmethodsinmaskproposalgeneration.Weoutperform
+
+theaccuracyoftheseapproachesbyover
+8.3
+pointsAR.In
+particular,we nearlydoubletheaccuracyonsmallobjects.
+Existingmaskproposalmethods[
+27
+,
+28
+,
+4
+]arebasedon
+denselysampledimagepyramids(
+e.g
+., scaledby
+2
+f
+2:0
+:
+5:1
+g
+in[
+27
+,
+28
+]),makingthemcomputationallyexpensive.Our
+approach,basedonFPNs,issubstantiallyfaster(ourmod-
+
+elsrunat4to6fps).Theseresultsdemonstratethatour
+
+modelisagenericfeatureextractorandcanreplace image
+
+pyramidsfor othermulti-scaledetectionproblems.
+
+7.Conclusion
+Wehavepresentedacleanandsimpleframeworkfor
+buildingfeature pyramidsinsideConvNets.Ourmethod
+
+showssignicantimprovementsoverseveralstrongbase-
+
+linesandcompetitionwinners.Thus,itprovidesapractical
+
+solution forresearchandapplicationsoffeaturepyramids,
+
+withouttheneedofcomputingimagepyramids.Finally,
+
+ourstudysuggeststhatdespitethestrongrepresentational
+
+powerofdeepConvNetsandtheirimplicitrobustnessto
+
+scalevariation,itisstillcriticaltoexplicitlyaddressmulti-
+
+scaleproblemsusingpyramidrepresentations.
+2124
+
+References
+[1]E.H.Adelson,C.H.Anderson,J.R.Bergen,P.J.Burt,and
+J.M.Ogden.Pyramidmethodsinimageprocessing.
+RCA
+engineer
+, 1984.
+[2]S.Bell,C.L.Zitnick,K.Bala,andR.Girshick.Inside-
+outsidenet: Detectingobjectsincontextwithskip pooling
+
+andrecurrentneuralnetworks.In
+CVPR
+, 2016.
+[3]Z.Cai,Q.Fan,R.S.Feris,andN.Vasconcelos.Aunied
+multi-scaledeep convolutionalneuralnetworkforfastobject
+
+detection.In
+ECCV
+, 2016.
+[4]J.Dai, K.He,Y.Li,S.Ren,andJ.Sun.Instance-sensitive
+fullyconvolutionalnetworks.In
+ECCV
+, 2016.
+[5]N.DalalandB.Triggs. Histogramsoforientedgradientsfor
+humandetection.In
+CVPR
+, 2005.
+[6]P.Doll
+´
+ar,R.Appel,S.Belongie, andP.Perona.Fastfeature
+pyramidsforobjectdetection.
+TPAMI
+, 2014.
+[7]P.F.Felzenszwalb,R. B. Girshick,D.McAllester,andD.Ra-
+manan.Objectdetectionwithdiscriminativelytrainedpart-
+
+basedmodels.
+TPAMI
+, 2010.
+[8]G.GhiasiandC.C.Fowlkes.Laplacianpyramidreconstruc-
+tionandrenementforsemanticsegmentation.In
+ECCV
+,
+2016.
+[9]S.GidarisandN.Komodakis.Objectdetectionviaamulti-
+region&semantic segmentation-awareCNNmodel. In
+
+ICCV, 2015.
+[10]S.GidarisandN.Komodakis.Attendrenerepeat:Active
+boxproposalgenerationviain-outlocalization.In
+BMVC
+,
+2016.
+[11]R.Girshick.FastR-CNN.In
+ICCV
+, 2015.
+[12]R. Girshick,J.Donahue,T.Darrell,andJ.Malik.Richfea-
+turehierarchiesforaccurateobjectdetectionand semantic
+
+segmentation.In
+CVPR
+, 2014.
+[13]B.Hariharan,P.Arbel
+´
+aez,R.Girshick,andJ.Malik. Hyper-
+columnsforobjectsegmentationandne-grainedlocaliza-
+
+tion.In
+CVPR
+, 2015.
+[14]K.He,G.Gkioxari,P.Doll
+´
+ar,andR.Girshick.Maskr-cnn.
+arXiv:1703.06870
+, 2017.
+[15]K.He,X.Zhang,S.Ren,andJ.Sun.Spatialpyramidpooling
+indeepconvolutionalnetworksforvisual recognition.In
+
+ECCV. 2014.
+[16]K.He,X.Zhang,S.Ren,andJ.Sun.Deepresiduallearning
+forimagerecognition.In
+CVPR
+, 2016.
+[17]S.Honari,J.Yosinski,P.Vincent,and C.Pal.Recombinator
+networks:Learningcoarse-to-nefeatureaggregation.In
+
+CVPR, 2016.
+[18]T.Kong,A.Yao,Y.Chen,andF.Sun.Hypernet:Towardsac-
+curateregionproposalgenerationandjointobjectdetection.
+
+InCVPR
+, 2016.
+[19]A.Krizhevsky,I.Sutskever,andG.Hinton.ImageNetclas-
+sicationwithdeepconvolutionalneuralnetworks.In
+NIPS
+,
+2012.
+[20]Y.LeCun,B.Boser,J.S.Denker,D.Henderson, R.E.
+Howard,W.Hubbard,andL.D.Jackel.Backpropagation
+
+appliedtohandwrittenzipcoderecognition.
+Neuralcompu-
+tation
+, 1989.
+[21]T.-Y.Lin,M.Maire,S.Belongie,J.Hays,P.Perona,D.Ra-
+manan,P.Doll
+´
+ar,andC.L. Zitnick.MicrosoftCOCO: Com-
+monobjectsincontext.In
+ECCV
+, 2014.
+[22]W.Liu, D.Anguelov,D.Erhan,C.Szegedy,andS.Reed.
+SSD:Singleshotmultiboxdetector.In
+ECCV
+, 2016.
+[23]W.Liu,A.Rabinovich,andA.C.Berg.ParseNet:Looking
+widertoseebetter.In
+ICLRworkshop
+, 2016.
+[24]J.Long,E.Shelhamer,andT.Darrell.Fullyconvolutional
+networksforsemanticsegmentation.In
+CVPR
+, 2015.
+[25]D.G.Lowe.Distinctiveimagefeaturesfromscale-invariant
+keypoints.
+IJCV
+, 2004.
+[26]A.Newell,K.Yang,andJ.Deng.Stackedhourglassnet-
+worksforhumanposeestimation.In
+ECCV
+, 2016.
+[27]P.O.Pinheiro,R.Collobert,andP.Dollar.Learningtoseg-
+mentobjectcandidates.In
+NIPS
+, 2015.
+[28]P.O.Pinheiro,T.-Y.Lin,R.Collobert,andP.Doll
+´
+ar.Learn-
+ingtoreneobjectsegments.In
+ECCV
+, 2016.
+[29]S.Ren,K. He,R.Girshick,andJ.Sun.FasterR-CNN:To-
+wardsreal-time objectdetectionwithregionproposalnet-
+
+works.In
+NIPS
+, 2015.
+[30]S.Ren,K.He,R.Girshick,X.Zhang,andJ.Sun.Object
+detectionnetworksonconvolutionalfeaturemaps.
+PAMI
+,
+2016.
+[31]O.Ronneberger,P.Fischer,andT.Brox.U-Net:Convolu-
+tionalnetworksforbiomedicalimagesegmentation.In
+MIC-
+CAI
+, 2015.
+[32]H.Rowley,S.Baluja,andT.Kanade.Humanfacedetec-
+tioninvisualscenes.TechnicalReportCMU-CS-95-158R,
+
+CarnegieMellonUniversity, 1995.
+[33]O.Russakovsky,J.Deng,H.Su,J.Krause,S.Satheesh,
+S.Ma,Z.Huang,A.Karpathy,A.Khosla,M.Bernstein,
+
+A.C.Berg,andL.Fei-Fei.ImageNetLargeScaleVisual
+
+RecognitionChallenge.
+IJCV
+, 2015.
+[34]P.Sermanet,D.Eigen,X.Zhang,M.Mathieu,R.Fergus,
+andY.LeCun.Overfeat:Integrated recognition,localization
+
+anddetectionusingconvolutionalnetworks.In
+ICLR
+, 2014.
+[35]A.Shrivastava,A.Gupta,andR.Girshick.Trainingregion-
+basedobjectdetectorswithonline hardexamplemining.In
+
+CVPR, 2016.
+[36]K.SimonyanandA.Zisserman.Verydeepconvolutional
+networksforlarge-scaleimage recognition.In
+ICLR
+, 2015.
+[37]J.R.Uijlings,K.E.vandeSande,T.Gevers,andA.W.
+Smeulders. Selectivesearchforobjectrecognition.
+IJCV
+,
+2013.
+[38]R.Vaillant,C.Monrocq,andY.LeCun.Originalapproach
+forthelocalisationof objectsinimages.
+IEEProc.onVision,
+Image, andSignalProcessing
+, 1994.
+[39]S.ZagoruykoandN.Komodakis.Wideresidualnetworks.
+In
+BMVC
+, 2016.
+[40]S.Zagoruyko,A.Lerer,T.-Y.Lin,P.O.Pinheiro,S.Gross,
+S.Chintala,and P. Doll
+´
+ar.Amultipathnetworkforobject
+detection.In
+BMVC
+, 2016.
+2125
+
