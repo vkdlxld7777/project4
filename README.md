@@ -19,8 +19,15 @@
 ### 3. 프로젝트 설명
 + title과 detail을 각각 token화 진행
 + 전체 단어 빈도수 파악
+![image](https://user-images.githubusercontent.com/74826174/189719881-54733074-fe1f-40d1-9bf4-cc1a80dc43dd.png)
+![image](https://user-images.githubusercontent.com/74826174/189719903-9c246753-8c3f-4277-b50f-8d213ae89742.png)
+
 + 전체 논문의 텍스트 평균길이 파악
+![image](https://user-images.githubusercontent.com/74826174/189720008-36d229d5-52dd-420e-9558-86dfc4dd2a40.png)
+![image](https://user-images.githubusercontent.com/74826174/189719958-2bc0599e-27cb-4b45-9381-ceddae9d61ec.png)
+
 + 3개의 인코더 층과 1개의 디코더 층 1개의 어텐션 층으로 모델 구성
+![image](https://user-images.githubusercontent.com/74826174/189720049-506dc206-7d9b-456c-bad5-52854b25389b.png)
 
 
 ### 4. 문제점과 개선방안
